@@ -64,7 +64,7 @@ export default function Home() {
       return;
     }
     supabase.auth.getUser().then(({ data, error }) => {
-      if (error) setNotice(error.message);
+      if (error && !/Auth session missing/i.test(error.message)) setNotice(error.message);
       setUser(data?.user || null);
       setAuthLoading(false);
     }).catch(err => {
