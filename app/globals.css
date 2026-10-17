@@ -151,3 +151,6 @@ main{min-width:0;max-width:100%}
   .paper h1{font-size:22px}
   @page{size:A4;margin:18mm}
 }
+/* Icon-only brand mark */
+.brandmark,.logo-icon{font-size:0}
+.brandmark::before,.logo-icon::before{content:'🧠';font-size:22px;line-height:1}
