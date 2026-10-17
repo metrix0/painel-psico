@@ -30,7 +30,7 @@ main{min-width:0;max-width:100%}
 .topbar{height:72px;position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 30px}
 .topbar strong{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .account-label{font-size:10px;color:var(--brand);font-weight:700;padding:6px 9px;background:var(--brand3);border-radius:20px}
-.menu-btn,.backdrop{display:none}
+.menu-btn,.backdrop,.topbar{display:none}
 .content{max-width:1200px;padding:30px;margin:0 auto;min-width:0}
 .hero{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:22px}
 .hero h1,.empty-state h1{font-family:"DM Serif Display",serif;font-size:34px;font-weight:400;line-height:1.2;margin:0}
@@ -110,7 +110,7 @@ main{min-width:0;max-width:100%}
   .side-menu.show{transform:translateX(0)}
   .backdrop{display:block;position:fixed;inset:0;z-index:60;background:#081b1470;border:0;width:100%;height:100%}
   .menu-btn{display:grid;place-items:center;width:36px;height:36px;flex:0 0 36px;border:1px solid var(--line);border-radius:9px;background:#fff;font-size:18px;color:var(--text)}
-  .topbar{height:58px;padding:0 14px;gap:10px}
+  .topbar{display:flex;height:58px;padding:0 14px;gap:10px}
   .topbar strong{font-size:12px;flex:1;min-width:0}
   .content{padding:20px 14px 30px;min-width:0;max-width:100%}
   .hero{align-items:stretch;flex-direction:column;gap:14px;margin-bottom:16px}
@@ -154,3 +154,131 @@ main{min-width:0;max-width:100%}
 /* Icon-only brand mark */
 .brandmark,.logo-icon{font-size:0}
 .brandmark::before,.logo-icon::before{content:"";display:block;width:23px;height:23px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%206a3%203%200%200%200-5.8-1A3.5%203.5%200%200%200%204.5%2011%203.5%203.5%200%200%200%206%2017a3%203%200%200%200%206%201.5V6Z%22%2F%3E%3Cpath%20d%3D%22M12%206a3%203%200%200%201%205.8-1%203.5%203.5%200%200%201%201.7%206%203.5%203.5%200%200%201-1.5%206%203%203%200%200%201-6%201.5V6Z%22%2F%3E%3Cpath%20d%3D%22M9%208.5a2.8%202.8%200%200%200-2.5%203M15%208.5a2.8%202.8%200%200%201%202.5%203M9.5%2015.5a2.5%202.5%200%200%201-2-2M14.5%2015.5a2.5%202.5%200%200%200%202-2%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.9%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%206a3%203%200%200%200-5.8-1A3.5%203.5%200%200%200%204.5%2011%203.5%203.5%200%200%200%206%2017a3%203%200%200%200%206%201.5V6Z%22%2F%3E%3Cpath%20d%3D%22M12%206a3%203%200%200%201%205.8-1%203.5%203.5%200%200%201%201.7%206%203.5%203.5%200%200%201-1.5%206%203%203%200%200%201-6%201.5V6Z%22%2F%3E%3Cpath%20d%3D%22M9%208.5a2.8%202.8%200%200%200-2.5%203M15%208.5a2.8%202.8%200%200%201%202.5%203M9.5%2015.5a2.5%202.5%200%200%201-2-2M14.5%2015.5a2.5%202.5%200%200%200%202-2%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat}
+
+
+/* Recent patients, compact autosave status, subtle interface motion */
+.recent-label{
+  margin:8px 10px 5px;
+  color:#a5c1b5;
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.patient-links{min-height:0}
+.patient-link{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.save-state{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  flex:none;
+  padding:8px 3px;
+  font-size:11px;
+  font-weight:650;
+  color:#54826e;
+  white-space:nowrap;
+}
+.save-state::before{
+  content:"";
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#5b9a7a;
+  flex:none;
+}
+.save-state.save-pending{color:#81725a}
+.save-state.save-pending::before{background:#c5a264}
+.save-state.save-saving{color:#547b78}
+.save-state.save-saving::before{background:#66a6a0;animation:savePulse 1s ease-in-out infinite}
+.save-state.save-error{color:#b14c4c}
+.save-state.save-error::before{background:#c45454}
+.notification.save-error{color:#a33e3e;background:#fff6f5;border-color:#f0d0cc}
+
+/* Expanding, keyboard-accessible status selector (instead of native popup). */
+.animated-select{position:relative;align-self:start}
+.select-trigger{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:5px;
+  padding:10px 11px;
+  font-size:13px;
+  line-height:1.4;
+  text-align:left;
+  border:1px solid #d8e2dd;
+  background:#fbfcfb;
+  color:var(--text);
+  border-radius:9px;
+  min-height:39px;
+  transition:border-color .2s ease,background .2s ease,box-shadow .2s ease;
+}
+.select-trigger:hover{background:#f5f9f7;border-color:#aecabd}
+.select-trigger:focus-visible{outline:2px solid #79aa96;outline-offset:2px}
+.select-chevron{flex:none;transition:transform .23s cubic-bezier(.22,1,.36,1)}
+.is-open .select-chevron{transform:rotate(180deg)}
+.select-reveal{
+  display:grid;
+  grid-template-rows:0fr;
+  opacity:0;
+  visibility:hidden;
+  transition:grid-template-rows .26s cubic-bezier(.22,1,.36,1),opacity .2s ease,visibility .26s;
+}
+.is-open .select-reveal{grid-template-rows:1fr;opacity:1;visibility:visible}
+.select-reveal-inner{min-height:0;overflow:hidden}
+.select-options{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  margin-top:5px;
+  padding:5px;
+  border:1px solid #deebe3;
+  border-radius:10px;
+  background:#fff;
+  box-shadow:0 8px 20px rgba(18,51,38,.06);
+}
+.select-options button{
+  border:0;
+  border-radius:7px;
+  padding:8px;
+  font-size:11px;
+  text-align:left;
+  white-space:normal;
+  background:transparent;
+  color:var(--text);
+  transition:background .16s ease,transform .16s ease;
+}
+.select-options button:hover,.select-options button:focus-visible{background:var(--brand3)}
+.select-options button.selected{background:var(--brand2);color:var(--brand);font-weight:700}
+
+.btn,.patient-link,.side-add,.side-nav button,.signout,.mobile-tabs button,.text-btn,.mini-delete{
+  transition:background-color .18s ease,color .18s ease,border-color .18s ease,
+    box-shadow .18s ease,transform .18s ease;
+}
+.btn:not(:disabled):active,.side-add:active{transform:scale(.98)}
+.btn:not(:disabled):hover{box-shadow:0 3px 12px rgba(28,79,58,.1);transform:translateY(-1px)}
+.patient-link:hover,.side-nav button:hover{transform:translateX(2px)}
+input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,background-color .2s ease}
+.card,.stat,.instrument-entry{transition:border-color .2s ease,box-shadow .2s ease}
+.instrument-entry:hover{border-color:#cdded4}
+.content-stack > .card,.report-layout,.instrument-entry,.session-entry,.empty-state{
+  animation:softAppear .24s ease both;
+}
+.modal{animation:modalAppear .22s cubic-bezier(.22,1,.36,1) both}
+.modal-shade{animation:fadeIn .16s ease both}
+.notification{animation:softAppear .18s ease both}
+
+@keyframes savePulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes softAppear{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@keyframes modalAppear{from{opacity:0;transform:translateY(9px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:760px){
+  .topbar .save-state{font-size:10px;padding:0}
+  .hero .save-state{display:none}
+  .topbar strong{min-width:0}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}

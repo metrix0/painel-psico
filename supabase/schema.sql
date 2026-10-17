@@ -15,7 +15,8 @@ create table if not exists public.psico_patients (
   anamnese jsonb not null default '{}'::jsonb,
   conclusion text not null default '',
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  last_visited_at timestamptz
 );
 
 create table if not exists public.psico_sessions (

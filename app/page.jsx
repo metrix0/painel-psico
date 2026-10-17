@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { configured, supabase } from "../lib/supabase";
+import { useAutosave } from "../lib/useAutosave";
 
 const EMPTY_ANAMNESE = {
   motivo: "",
@@ -40,6 +41,81 @@ function InputField({ label, value, onChange, type = "text", placeholder = "" })
   );
 }
 
+
+
+function patientPayload(patient) {
+  return {
+    name: patient.name,
+    birth_date: patient.birth_date || null,
+    grade: patient.grade || "",
+    school: patient.school || "",
+    guardian: patient.guardian || "",
+    requester: patient.requester || "",
+    anamnese: patient.anamnese || {},
+    conclusion: patient.conclusion || ""
+  };
+}
+
+function sessionPayload(session) {
+  return {
+    occurred_on: session.occurred_on,
+    duration_minutes: Number(session.duration_minutes),
+    title: session.title || "",
+    notes: session.notes || ""
+  };
+}
+
+function instrumentPayload(instrument) {
+  return {
+    name: instrument.name || "",
+    category: instrument.category || "",
+    status: instrument.status || "Pendente",
+    scores: instrument.scores || []
+  };
+}
+
+function AnimatedSelect({ label, value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef(null);
+
+  useEffect(() => {
+    function dismiss(event) {
+      if (root.current && !root.current.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, []);
+
+  return (
+    <div className={"field animated-select" + (open ? " is-open" : "")} ref={root}
+      onKeyDown={event => { if (event.key === "Escape") setOpen(false); }}>
+      <span>{label}</span>
+      <button type="button" className="select-trigger" aria-haspopup="listbox"
+        aria-expanded={open} onClick={() => setOpen(current => !current)}>
+        <span>{value}</span>
+        <svg className="select-chevron" width="16" height="16" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      <div className="select-reveal" aria-hidden={!open}>
+        <div className="select-reveal-inner">
+          <div className="select-options" role="listbox" aria-label={label}>
+            {options.map(option => (
+              <button key={option} type="button" role="option" aria-selected={value === option}
+                tabIndex={open ? 0 : -1}
+                className={value === option ? "selected" : ""}
+                onClick={() => { onChange(option); setOpen(false); }}>
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState(null);
@@ -60,6 +136,8 @@ export default function Home() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [search, setSearch] = useState("");
+  const autosave = useAutosave();
+  const switchingPatient = useRef(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.slice(1));
@@ -100,7 +178,9 @@ export default function Home() {
       if (error) { setNotice(error.message); return; }
       const rows = data || [];
       setPatients(rows);
-      setSelectedId(prev => rows.some(p => p.id === prev) ? prev : (rows[0]?.id || null));
+      const recent = [...rows].sort((a, b) =>
+        Date.parse(b.last_visited_at || b.created_at) - Date.parse(a.last_visited_at || a.created_at));
+      setSelectedId(prev => rows.some(p => p.id === prev) ? prev : (recent[0]?.id || null));
     }
     load();
     return () => { cancelled = true; };
@@ -108,8 +188,19 @@ export default function Home() {
 
   useEffect(() => {
     const patient = patients.find(p => p.id === selectedId);
-    setForm(patient ? { ...patient, anamnese: { ...EMPTY_ANAMNESE, ...(patient.anamnese || {}) } } : null);
-  }, [patients, selectedId]);
+    if (!patient) { setForm(null); return; }
+    const next = { ...patient, anamnese: { ...EMPTY_ANAMNESE, ...(patient.anamnese || {}) } };
+    setForm(next);
+    autosave.register("patient:" + patient.id, patientPayload(next));
+    // Patient editing is not reset by sidebar reorder or background saves.
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedId || !user) return;
+    const visitedAt = new Date().toISOString();
+    setPatients(prev => prev.map(p => p.id === selectedId ? { ...p, last_visited_at: visitedAt } : p));
+    void supabase.from("psico_patients").update({ last_visited_at: visitedAt }).eq("id", selectedId);
+  }, [selectedId, user?.id]);
 
   useEffect(() => {
     if (!selectedId || !supabase || !user) {
@@ -125,16 +216,40 @@ export default function Home() {
       ]);
       if (cancelled) return;
       if (s.error || i.error) setNotice(s.error?.message || i.error?.message);
-      else { setSessions(s.data || []); setInstruments(i.data || []); }
+      else {
+        for (const session of s.data || []) autosave.register("session:" + session.id, sessionPayload(session));
+        for (const instrument of i.data || []) autosave.register("instrument:" + instrument.id, instrumentPayload(instrument));
+        setSessions(s.data || []);
+        setInstruments(i.data || []);
+      }
     }
     load();
     return () => { cancelled = true; };
   }, [selectedId, user?.id]);
 
   function openTab(name) {
+    void autosave.flushAll();
     setTab(name);
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function selectPatient(id) {
+    if (switchingPatient.current) return;
+    if (id !== selectedId) {
+      switchingPatient.current = true;
+      try {
+        if (!await autosave.flushAll()) {
+          setNotice("Há alterações não salvas. Verifique a conexão ou os campos.");
+          return;
+        }
+        setSelectedId(id);
+      } finally {
+        switchingPatient.current = false;
+      }
+    }
+    setSearch("");
+    openTab("anamnese");
   }
 
   async function signIn(e) {
@@ -185,6 +300,10 @@ export default function Home() {
   }
 
   async function signOut() {
+    if (!await autosave.flushAll()) {
+      setNotice("Não foi possível salvar as alterações. Não saia ainda.");
+      return;
+    }
     await supabase.auth.signOut();
     setPasswordSetup(false);
     setMenuOpen(false);
@@ -195,6 +314,10 @@ export default function Home() {
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
+    if (!await autosave.flushAll()) {
+      setNotice("Verifique as alterações pendentes antes de trocar de paciente.");
+      return;
+    }
     setBusy(true); setNotice("");
     const { data, error } = await supabase.from("psico_patients").insert({ name }).select().single();
     if (error) setNotice(error.message);
@@ -210,42 +333,31 @@ export default function Home() {
   }
 
   function setField(key, value) {
-    setForm(prev => ({ ...prev, [key]: value }));
-  }
-  function setAnamnese(key, value) {
-    setForm(prev => ({ ...prev, anamnese: { ...prev.anamnese, [key]: value } }));
+    const next = { ...form, [key]: value };
+    setForm(next);
+    autosave.track("patient:" + selectedId, patientPayload(next));
   }
 
-  async function savePatient() {
-    if (!form || !form.name.trim()) { setNotice("Informe o nome do paciente."); return; }
-    setBusy(true); setNotice("");
-    const values = {
-      name: form.name.trim(),
-      birth_date: form.birth_date || null,
-      grade: form.grade || "",
-      school: form.school || "",
-      guardian: form.guardian || "",
-      requester: form.requester || "",
-      anamnese: form.anamnese,
-      conclusion: form.conclusion || "",
-      updated_at: new Date().toISOString()
-    };
-    const { data, error } = await supabase.from("psico_patients").update(values).eq("id", selectedId).select().single();
-    if (error) setNotice(error.message);
-    else {
-      setPatients(prev => prev.map(p => p.id === data.id ? data : p));
-      setNotice("Salvo.");
-    }
-    setBusy(false);
+  function setAnamnese(key, value) {
+    const next = { ...form, anamnese: { ...form.anamnese, [key]: value } };
+    setForm(next);
+    autosave.track("patient:" + selectedId, patientPayload(next));
   }
 
   async function deletePatient() {
     if (!form || !window.confirm("Excluir o paciente e todos os registros?")) return;
+    if (!await autosave.flushAll()) {
+      setNotice("Não foi possível concluir o salvamento antes de excluir.");
+      return;
+    }
     setBusy(true);
     const { error } = await supabase.from("psico_patients").delete().eq("id", form.id);
     if (error) setNotice(error.message);
     else {
       const remaining = patients.filter(p => p.id !== form.id);
+      autosave.forget("patient:" + form.id);
+      sessions.forEach(s => autosave.forget("session:" + s.id));
+      instruments.forEach(i => autosave.forget("instrument:" + i.id));
       setPatients(remaining);
       setSelectedId(remaining[0]?.id || null);
       setNotice("Paciente excluído.");
@@ -262,29 +374,32 @@ export default function Home() {
       notes: ""
     }).select().single();
     if (error) setNotice(error.message);
-    else setSessions(prev => [...prev, data]);
+    else {
+      autosave.register("session:" + data.id, sessionPayload(data));
+      setSessions(prev => [...prev, data]);
+    }
     setBusy(false);
   }
 
   function changeSession(id, field, value) {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
-  }
-
-  async function saveSession(s) {
-    setBusy(true);
-    const { error } = await supabase.from("psico_sessions").update({
-      occurred_on: s.occurred_on, duration_minutes: Number(s.duration_minutes) || 0,
-      title: s.title, notes: s.notes
-    }).eq("id", s.id);
-    setNotice(error ? error.message : "Sessão salva.");
-    setBusy(false);
+    const next = sessions.map(s => s.id === id ? { ...s, [field]: value } : s);
+    setSessions(next);
+    const changed = next.find(s => s.id === id);
+    if (changed) autosave.track("session:" + id, sessionPayload(changed));
   }
 
   async function deleteSession(id) {
     if (!window.confirm("Excluir esta sessão?")) return;
+    if (!await autosave.flushAll()) {
+      setNotice("Não foi possível salvar as alterações pendentes.");
+      return;
+    }
     const { error } = await supabase.from("psico_sessions").delete().eq("id", id);
     if (error) setNotice(error.message);
-    else setSessions(prev => prev.filter(s => s.id !== id));
+    else {
+      autosave.forget("session:" + id);
+      setSessions(prev => prev.filter(s => s.id !== id));
+    }
   }
 
   async function addInstrument() {
@@ -294,46 +409,77 @@ export default function Home() {
       scores: [{ label: "Resultado", value: "" }]
     }).select().single();
     if (error) setNotice(error.message);
-    else setInstruments(prev => [...prev, data]);
+    else {
+      autosave.register("instrument:" + data.id, instrumentPayload(data));
+      setInstruments(prev => [...prev, data]);
+    }
     setBusy(false);
   }
 
+  function updateInstrument(id, update) {
+    const next = instruments.map(i => i.id === id ? update(i) : i);
+    setInstruments(next);
+    const changed = next.find(i => i.id === id);
+    if (changed) autosave.track("instrument:" + id, instrumentPayload(changed));
+  }
+
   function changeInstrument(id, field, value) {
-    setInstruments(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
+    updateInstrument(id, i => ({ ...i, [field]: value }));
   }
 
   function changeScore(id, position, field, value) {
-    setInstruments(prev => prev.map(i => i.id !== id ? i : {
+    updateInstrument(id, i => ({
       ...i,
-      scores: (i.scores || []).map((score, index) => index === position ? { ...score, [field]: value } : score)
+      scores: (i.scores || []).map((score, index) =>
+        index === position ? { ...score, [field]: value } : score)
     }));
   }
 
   function addScore(id) {
-    setInstruments(prev => prev.map(i => i.id === id
-      ? { ...i, scores: [...(i.scores || []), { label: "", value: "" }] } : i));
+    updateInstrument(id, i => ({ ...i, scores: [...(i.scores || []), { label: "", value: "" }] }));
   }
 
   function removeScore(id, position) {
-    setInstruments(prev => prev.map(i => i.id === id
-      ? { ...i, scores: (i.scores || []).filter((_, index) => index !== position) } : i));
-  }
-
-  async function saveInstrument(i) {
-    setBusy(true);
-    const { error } = await supabase.from("psico_instruments").update({
-      name: i.name, category: i.category, status: i.status, scores: i.scores || []
-    }).eq("id", i.id);
-    setNotice(error ? error.message : "Instrumento salvo.");
-    setBusy(false);
+    updateInstrument(id, i => ({
+      ...i, scores: (i.scores || []).filter((_, index) => index !== position)
+    }));
   }
 
   async function deleteInstrument(id) {
     if (!window.confirm("Excluir este instrumento?")) return;
+    if (!await autosave.flushAll()) {
+      setNotice("Não foi possível salvar as alterações pendentes.");
+      return;
+    }
     const { error } = await supabase.from("psico_instruments").delete().eq("id", id);
     if (error) setNotice(error.message);
-    else setInstruments(prev => prev.filter(i => i.id !== id));
+    else {
+      autosave.forget("instrument:" + id);
+      setInstruments(prev => prev.filter(i => i.id !== id));
+    }
   }
+
+  // Reflect saved patient edits in the sidebar without resetting the active draft.
+  useEffect(() => {
+    if (!form || form.id !== selectedId || autosave.status !== "saved") return;
+    const stored = patientPayload(form);
+    setPatients(prev => {
+      const patient = prev.find(p => p.id === selectedId);
+      if (!patient || JSON.stringify(patientPayload(patient)) === JSON.stringify(stored)) return prev;
+      return prev.map(p => p.id === selectedId ? { ...p, ...stored } : p);
+    });
+  }, [autosave.status, form, selectedId]);
+
+  // Draft names in the "new patient" dialog haven't been inserted yet.
+  useEffect(() => {
+    if (!creating || !newName.trim()) return;
+    const warnOnUnload = event => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnOnUnload);
+    return () => window.removeEventListener("beforeunload", warnOnUnload);
+  }, [creating, newName]);
 
   if (!configured) return (
     <div className="center-screen">
@@ -377,7 +523,15 @@ export default function Home() {
     </div>
   );
 
-  const listed = patients.filter(p => p.name.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR")));
+  const listed = search.trim()
+    ? patients.filter(p => p.name.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR")))
+    : [...patients]
+        .sort((a, b) => Date.parse(b.last_visited_at || b.created_at) -
+                        Date.parse(a.last_visited_at || a.created_at))
+        .slice(0, 3);
+  const saveLabel = autosave.status === "saving" ? "Salvando…"
+    : autosave.status === "pending" ? "Pendente"
+    : autosave.status === "error" ? "Não salvo" : "Salvo";
   const anamnese = form?.anamnese || EMPTY_ANAMNESE;
   const complete = instruments.filter(i => i.status === "Concluído").length;
   const missing = instruments.filter(i => i.status !== "Concluído").length;
@@ -391,9 +545,10 @@ export default function Home() {
         <div className="side-section">
           <div className="side-label">Pacientes</div>
           <input className="patient-search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar paciente" />
-          <div className="patient-links">
-            {listed.map(p => <button key={p.id} className={selectedId === p.id ? "patient-link active" : "patient-link"} onClick={() => { setSelectedId(p.id); setMenuOpen(false); openTab("anamnese"); }}>{p.name}</button>)}
-            {!listed.length && <span className="side-empty">Nenhum paciente</span>}
+          {!search.trim() && <div className="recent-label">Recentes</div>}
+          <div className="patient-links" aria-label={search.trim() ? "Resultados da busca" : "Pacientes recentes"}>
+            {listed.map(p => <button key={p.id} className={selectedId === p.id ? "patient-link active" : "patient-link"} onClick={() => void selectPatient(p.id)}>{p.name}</button>)}
+            {!listed.length && <span className="side-empty">{search.trim() ? "Nenhum resultado" : "Nenhum paciente"}</span>}
           </div>
           <button className="side-add" onClick={() => { setCreating(true); setMenuOpen(false); }}>+ Novo paciente</button>
         </div>
@@ -406,14 +561,15 @@ export default function Home() {
         <button className="signout" onClick={signOut}>Sair</button>
       </aside>
 
-      <main>
+      <main onBlurCapture={() => { if (autosave.isPending()) void autosave.flushAll(); }}>
         <header className="topbar">
           <button className="menu-btn" aria-label="Abrir menu" onClick={() => setMenuOpen(true)}>☰</button>
-          <strong>Avaliação neuropsicológica</strong>
-          <span className="account-label">Privado</span>
+          <strong>{form?.name || "Painel Psico"}</strong>
+          <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
         </header>
 
         <div className="content">
+          {autosave.error && <div className="notification save-error" role="alert">{autosave.error}</div>}
           {notice && <div className="notification" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Fechar">×</button></div>}
 
           {creating && <div className="modal-shade" onClick={() => setCreating(false)}>
@@ -432,7 +588,7 @@ export default function Home() {
             <div className="hero">
               <h1>{form.name}</h1>
               <div className="actions">
-                <button className="btn" disabled={busy} onClick={savePatient}>Salvar alterações</button>
+                <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
                 <button className="btn primary" onClick={() => openTab("laudo")}>Abrir laudo</button>
               </div>
             </div>
@@ -471,7 +627,6 @@ export default function Home() {
                     <textarea value={anamnese[key] || ""} onChange={e => setAnamnese(key, e.target.value)} />
                   </label>)}
                   <div className="card-actions">
-                    <button className="btn primary" disabled={busy} onClick={savePatient}>Salvar alterações</button>
                     <button className="btn danger" disabled={busy} onClick={deletePatient}>Excluir paciente</button>
                   </div>
                 </div>
@@ -489,7 +644,7 @@ export default function Home() {
                   </div>
                   <InputField label="Título" value={s.title} onChange={v => changeSession(s.id, "title", v)} />
                   <label className="question"><span>Observações</span><textarea value={s.notes || ""} onChange={e => changeSession(s.id, "notes", e.target.value)} /></label>
-                  <div className="card-actions"><button className="btn primary" disabled={busy} onClick={() => saveSession(s)}>Salvar sessão</button><button className="btn danger" onClick={() => deleteSession(s.id)}>Excluir</button></div>
+                  <div className="card-actions"><button className="btn danger" onClick={() => void deleteSession(s.id)}>Excluir</button></div>
                 </div>)}
               </div>
             </section>}
@@ -501,7 +656,7 @@ export default function Home() {
                 {instruments.map(i => <div className="instrument-entry" key={i.id}>
                   <div className="instrument-head">
                     <InputField label="Instrumento" value={i.name} onChange={v => changeInstrument(i.id, "name", v)} />
-                    <label className="field"><span>Status</span><select value={i.status} onChange={e => changeInstrument(i.id, "status", e.target.value)}><option>Pendente</option><option>Em andamento</option><option>Concluído</option></select></label>
+                    <AnimatedSelect label="Status" value={i.status} options={["Pendente", "Em andamento", "Concluído"]} onChange={v => changeInstrument(i.id, "status", v)} />
                   </div>
                   <InputField label="Área avaliada" value={i.category} onChange={v => changeInstrument(i.id, "category", v)} />
                   <div className="score-heading">Resultados</div>
@@ -511,7 +666,7 @@ export default function Home() {
                     <button className="mini-delete" onClick={() => removeScore(i.id, position)} aria-label="Remover resultado">×</button>
                   </div>)}
                   <button className="text-btn" onClick={() => addScore(i.id)}>+ Resultado</button>
-                  <div className="card-actions"><button className="btn primary" disabled={busy} onClick={() => saveInstrument(i)}>Salvar instrumento</button><button className="btn danger" onClick={() => deleteInstrument(i.id)}>Excluir</button></div>
+                  <div className="card-actions"><button className="btn danger" onClick={() => void deleteInstrument(i.id)}>Excluir</button></div>
                 </div>)}
               </div>
             </section>}
@@ -545,7 +700,7 @@ export default function Home() {
                   <div className="cardhead"><h2>Conclusão</h2></div>
                   <div className="cardbody">
                     <textarea value={form.conclusion || ""} onChange={e => setField("conclusion", e.target.value)} placeholder="Redigir conclusão..." />
-                    <button className="btn primary full-btn" disabled={busy} onClick={savePatient}>Salvar conclusão</button>
+                    <p className="muted">A conclusão é salva automaticamente.</p>
                     <button className="btn full-btn" onClick={() => window.print()}>Imprimir / PDF</button>
                   </div>
                 </div>
