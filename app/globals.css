@@ -18,7 +18,7 @@ input:focus,textarea:focus,select:focus{border-color:#79aa96;box-shadow:0 0 0 3p
 .side-section{display:flex;flex-direction:column;min-height:0}
 .patient-search{font-size:12px;padding:10px;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16);color:#fff;margin-bottom:9px}
 .patient-search::placeholder{color:#b7cbbf}
-.patient-links{max-height:230px;overflow-y:auto}
+.patient-links{max-height:230px;overflow-y:auto;overflow-x:hidden}
 .patient-link,.side-nav button,.signout,.side-add{display:block;border:0;color:#c8dcd3;background:transparent;text-align:left;width:100%;font-size:12px;font-weight:600;padding:10px 12px;border-radius:10px}
 .patient-link.active,.side-nav button.active{background:rgba(255,255,255,.13);color:#fff}
 .patient-link:hover,.side-nav button:hover,.signout:hover{background:rgba(255,255,255,.07)}
@@ -259,7 +259,7 @@ main{min-width:0;max-width:100%}
 }
 .btn:not(:disabled):active,.side-add:active{transform:scale(.98)}
 .btn:not(:disabled):hover{box-shadow:0 3px 12px rgba(28,79,58,.1);transform:translateY(-1px)}
-.patient-link:hover,.side-nav button:hover{transform:translateX(2px)}
+.side-nav button:hover{transform:translateX(2px)}
 input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,background-color .2s ease}
 .card,.stat,.instrument-entry{transition:border-color .2s ease,box-shadow .2s ease}
 .instrument-entry:hover{border-color:#cdded4}
