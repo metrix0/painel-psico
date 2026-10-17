@@ -45,6 +45,9 @@ export default function Home() {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordSetup, setPasswordSetup] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [patients, setPatients] = useState([]);
@@ -59,6 +62,11 @@ export default function Home() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const searchParams = new URLSearchParams(window.location.search);
+    if (["invite", "recovery"].includes(params.get("type") || searchParams.get("type"))) {
+      setPasswordSetup(true);
+    }
     if (!supabase) {
       setAuthLoading(false);
       return;
@@ -71,8 +79,9 @@ export default function Home() {
       setNotice(err.message);
       setAuthLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, authSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, authSession) => {
       setUser(authSession?.user || null);
+      if (event === "PASSWORD_RECOVERY") setPasswordSetup(true);
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -136,8 +145,48 @@ export default function Home() {
     setBusy(false);
   }
 
+  async function requestPasswordReset() {
+    if (!email.trim()) {
+      setNotice("Informe seu e-mail para receber o link de definição de senha.");
+      return;
+    }
+    setBusy(true);
+    setNotice("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + "/"
+    });
+    setNotice(error ? error.message : "Enviamos um link para seu e-mail. Confira sua caixa de entrada.");
+    setBusy(false);
+  }
+
+  async function finishPasswordSetup(e) {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      setNotice("A senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setNotice("As senhas não coincidem.");
+      return;
+    }
+    setBusy(true);
+    setNotice("");
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setNotice(error.message);
+    } else {
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordSetup(false);
+      window.history.replaceState(null, "", window.location.pathname);
+      setNotice("Senha definida com sucesso.");
+    }
+    setBusy(false);
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
+    setPasswordSetup(false);
     setMenuOpen(false);
     setTab("anamnese");
   }
@@ -299,6 +348,20 @@ export default function Home() {
 
   if (authLoading) return <div className="center-screen"><div className="muted">Carregando...</div></div>;
 
+  if (user && passwordSetup) return (
+    <div className="center-screen">
+      <form className="auth-card" onSubmit={finishPasswordSetup}>
+        <div className="logo-icon">PSI</div>
+        <h1>Definir senha</h1>
+        <p>Crie uma senha para acessar o Painel Psico.</p>
+        <InputField label="Nova senha" type="password" value={newPassword} onChange={setNewPassword} />
+        <InputField label="Confirmar senha" type="password" value={confirmPassword} onChange={setConfirmPassword} />
+        <button className="btn primary full-btn" disabled={busy}>{busy ? "Salvando..." : "Salvar senha"}</button>
+        {notice && <p className="error" role="status">{notice}</p>}
+      </form>
+    </div>
+  );
+
   if (!user) return (
     <div className="center-screen">
       <form className="auth-card" onSubmit={signIn}>
@@ -308,7 +371,8 @@ export default function Home() {
         <InputField label="E-mail" type="email" value={email} onChange={setEmail} />
         <InputField label="Senha" type="password" value={password} onChange={setPassword} />
         <button className="btn primary full-btn" disabled={busy}>{busy ? "Entrando..." : "Entrar"}</button>
-        {notice && <p className="error">{notice}</p>}
+        <button type="button" className="text-btn" disabled={busy} onClick={requestPasswordReset}>Definir ou recuperar senha</button>
+        {notice && <p className="error" role="status">{notice}</p>}
       </form>
     </div>
   );
