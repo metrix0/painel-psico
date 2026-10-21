@@ -149,8 +149,8 @@ main{min-width:0;max-width:100%}
   .card{border-radius:13px}
   .session-fields{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(68px,.6fr);gap:6px}
   .session-fields input{padding:9px 6px;font-size:11px}
-  .session-summary{padding:12px;gap:8px;flex-wrap:wrap}
-  .session-summary strong{flex-basis:100%}
+  .session-summary{padding:12px;gap:8px;flex-wrap:nowrap}
+  .session-summary strong{flex-basis:auto;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
   .session-details{padding:12px}
   .session-field-config-row{grid-template-columns:minmax(0,1fr)}
   .instrument-head{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
