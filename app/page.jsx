@@ -10,6 +10,7 @@ import InstrumentFormEditor from "../components/InstrumentFormEditor";
 import InstrumentDelivery from "../components/InstrumentDelivery";
 import ReportPanel from "../components/ReportPanel";
 import ReportSettings from "../components/ReportSettings";
+import DatePicker from "../components/DatePicker";
 import { DEFAULT_REPORT_SETTINGS } from "../supabase/functions/_shared/reportCore.mjs";
 import { deliveryDate, instrumentForm, waitingInSession } from "../lib/instrumentDelivery.mjs";
 
@@ -55,6 +56,7 @@ function formatAge(birthDate) {
 }
 
 function InputField({ label, value, onChange, type = "text", placeholder = "" }) {
+  if (type === "date") return <DatePicker label={label} value={value || ""} onChange={onChange} placeholder={placeholder || "Selecionar data"} />;
   return (
     <label className="field">
       <span>{label}</span>
@@ -209,7 +211,7 @@ export default function Home() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [search, setSearch] = useState("");
-  const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
+  const [patientPhotoUrls, setPatientPhotoUrls] = useState({});
   const [photoUploading, setPhotoUploading] = useState(false);
   const photoInputRef = useRef(null);
   const autosave = useAutosave();
@@ -242,22 +244,27 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const patientIds = patients.map(patient => patient.id).join(",");
+
   useEffect(() => {
     let active = true;
-    setProfilePhotoUrl("");
-    if (!user?.id || !supabase) return;
-    const path = user.id + "/avatar";
-    void supabase.storage.from("psico-avatars").createSignedUrl(path, 3600)
-      .then(({ data, error }) => {
-        if (active && !error && data?.signedUrl) setProfilePhotoUrl(data.signedUrl);
-      });
+    setPatientPhotoUrls({});
+    if (!user?.id || !supabase || !patients.length) return;
+    const storage = supabase.storage.from("psico-patient-photos");
+    void Promise.all(patients.map(async patient => {
+      const path = user.id + "/" + patient.id + "/photo";
+      const { data, error } = await storage.createSignedUrl(path, 3600);
+      return [patient.id, !error ? data?.signedUrl : null];
+    })).then(entries => {
+      if (active) setPatientPhotoUrls(Object.fromEntries(entries.filter(([, url]) => Boolean(url))));
+    });
     return () => { active = false; };
-  }, [user?.id]);
+  }, [user?.id, patientIds]);
 
-  async function uploadProfilePhoto(event) {
+  async function uploadPatientPhoto(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !user?.id) return;
+    if (!file || !user?.id || !selectedId) return;
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
       setNotice("Escolha uma foto JPG, PNG ou WebP.");
       return;
@@ -266,10 +273,11 @@ export default function Home() {
       setNotice("A foto deve ter até 2 MB.");
       return;
     }
+    const patientId = selectedId;
+    const path = user.id + "/" + patientId + "/photo";
     setPhotoUploading(true);
     try {
-      const path = user.id + "/avatar";
-      const bucket = supabase.storage.from("psico-avatars");
+      const bucket = supabase.storage.from("psico-patient-photos");
       const { error: uploadError } = await bucket.upload(path, file, {
         cacheControl: "60",
         contentType: file.type,
@@ -278,13 +286,27 @@ export default function Home() {
       if (uploadError) throw uploadError;
       const { data, error: urlError } = await bucket.createSignedUrl(path, 3600);
       if (urlError || !data?.signedUrl) throw urlError || new Error("Foto indisponível.");
-      setProfilePhotoUrl(data.signedUrl + "&v=" + Date.now());
-      setNotice("Foto de perfil atualizada.");
+      setPatientPhotoUrls(prev => ({ ...prev, [patientId]: data.signedUrl + "&v=" + Date.now() }));
+      setNotice("Foto do paciente atualizada.");
     } catch (error) {
       setNotice("Não foi possível salvar a foto: " + (error?.message || "erro desconhecido"));
     } finally {
       setPhotoUploading(false);
     }
+  }
+
+  async function removePatientPhoto() {
+    if (!user?.id || !selectedId || !patientPhotoUrls[selectedId]) return;
+    const patientId = selectedId;
+    setPhotoUploading(true);
+    const { error } = await supabase.storage.from("psico-patient-photos")
+      .remove([user.id + "/" + patientId + "/photo"]);
+    if (error) setNotice("Não foi possível remover a foto: " + error.message);
+    else {
+      setPatientPhotoUrls(prev => { const next = { ...prev }; delete next[patientId]; return next; });
+      setNotice("Foto do paciente removida.");
+    }
+    setPhotoUploading(false);
   }
 
   useEffect(() => {
@@ -588,7 +610,12 @@ export default function Home() {
       instruments.forEach(i => autosave.forget("instrument:" + i.id));
       setPatients(remaining);
       setSelectedId(remaining[0]?.id || null);
-      setNotice("Paciente excluído.");
+      setPatientPhotoUrls(prev => { const next = { ...prev }; delete next[form.id]; return next; });
+      if (user?.id) {
+        const { error: photoError } = await supabase.storage.from("psico-patient-photos")
+          .remove([user.id + "/" + form.id + "/photo"]);
+        setNotice(photoError ? "Paciente excluído, mas a foto não pôde ser removida: " + photoError.message : "Paciente excluído.");
+      } else setNotice("Paciente excluído.");
     }
     setBusy(false);
   }
@@ -938,7 +965,11 @@ export default function Home() {
           <div className="side-label">Pacientes</div>
           <input className="patient-search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar paciente" />
           <div className="patient-links" aria-label={search.trim() ? "Resultados da busca" : "Pacientes recentes"}>
-            {listed.map(p => <button key={p.id} className={selectedId === p.id ? "patient-link active" : "patient-link"} onClick={() => void selectPatient(p.id)}>{p.name}</button>)}
+            {listed.map(p => <button key={p.id} className={selectedId === p.id ? "patient-link active" : "patient-link"} onClick={() => void selectPatient(p.id)}>
+              <span className="patient-sidebar-avatar" aria-hidden="true">
+                {patientPhotoUrls[p.id] ? <img src={patientPhotoUrls[p.id]} alt="" /> : p.name.trim().slice(0, 1).toUpperCase()}
+              </span><span className="patient-sidebar-name">{p.name}</span>
+            </button>)}
             {!listed.length && <span className="side-empty">{search.trim() ? "Nenhum resultado" : "Nenhum paciente"}</span>}
           </div>
           <button className="side-add" onClick={() => { setCreating(true); setMenuOpen(false); }}>+ Novo paciente</button>
@@ -950,35 +981,6 @@ export default function Home() {
           ].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => openTab(key)}>{label}</button>)}
         </nav>}
         <div className="sidebar-footer">
-          <div className="user-profile">
-            <button type="button" className="profile-photo-button"
-              disabled={photoUploading}
-              aria-label={photoUploading ? "Enviando foto" : "Adicionar ou alterar foto do perfil"}
-              title="Adicionar ou alterar foto do perfil"
-              onClick={() => photoInputRef.current?.click()}>
-              {profilePhotoUrl
-                ? <img src={profilePhotoUrl} alt="" className="profile-photo" />
-                : <svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
-                  </svg>}
-              <span className="profile-photo-edit" aria-hidden="true">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 5h-4l-2 3H4v11h16V8h-4l-2-3Z" />
-                  <circle cx="12" cy="13" r="3" />
-                </svg>
-              </span>
-            </button>
-            <input ref={photoInputRef} className="profile-photo-input" type="file"
-              accept="image/jpeg,image/png,image/webp"
-              aria-label="Selecionar foto de perfil" onChange={uploadProfilePhoto} />
-            <div className="user-profile-info">
-              <strong>{user.user_metadata?.full_name || user.email?.split("@")[0] || "Perfil"}</strong>
-              <span>{photoUploading ? "Enviando foto..." : user.email}</span>
-            </div>
-          </div>
           <button type="button" className={"settings-link" + (tab === "configuracoes" ? " active" : "")}
             aria-current={tab === "configuracoes" ? "page" : undefined}
             onClick={() => openTab("configuracoes")}>Configurações</button>
@@ -1143,11 +1145,26 @@ export default function Home() {
             <button className="btn primary" onClick={() => setCreating(true)}>+ Novo paciente</button>
           </div> : <>
             <div className="hero">
-              <h1>{form.name}</h1>
-              <div className="actions">
-                <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
-                <button className="btn primary" onClick={() => openTab("laudo")}>Abrir laudo</button>
+              <div className="patient-heading">
+                <button type="button" className="patient-photo-button"
+                  disabled={photoUploading} onClick={() => photoInputRef.current?.click()}
+                  aria-label={photoUploading ? "Enviando foto" : "Adicionar ou alterar foto do paciente"}
+                  title="Adicionar ou alterar foto do paciente">
+                  {patientPhotoUrls[selectedId]
+                    ? <img src={patientPhotoUrls[selectedId]} alt="" />
+                    : <span aria-hidden="true">{form.name?.trim().slice(0, 1).toUpperCase() || "?"}</span>}
+                  <span className="patient-photo-edit" aria-hidden="true">✎</span>
+                </button>
+                <div className="patient-heading-text">
+                  <h1>{form.name}</h1>
+                  {patientPhotoUrls[selectedId] && <button type="button" className="text-btn patient-photo-remove"
+                    disabled={photoUploading} onClick={() => void removePatientPhoto()}>Remover foto</button>}
+                </div>
+                <input ref={photoInputRef} className="patient-photo-input" type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  aria-label="Selecionar foto do paciente" onChange={uploadPatientPhoto} />
               </div>
+              <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
             </div>
 
             <div className="summary">
@@ -1170,6 +1187,12 @@ export default function Home() {
                 <div className="cardbody fields">
                   <InputField label="Nome" value={form.name} onChange={v => setField("name", v)} />
                   <InputField label="Data de nascimento" type="date" value={form.birth_date} onChange={v => setField("birth_date", v)} />
+                  <div className="consultation-datetime">
+                    <DatePicker label="Dia da consulta" value={anamnese.consulta_data || ""}
+                      onChange={v => setAnamnese("consulta_data", v)} />
+                    <InputField label="Horário da consulta" type="time" value={anamnese.consulta_horario || ""}
+                      onChange={v => setAnamnese("consulta_horario", v)} />
+                  </div>
                   <InputField label="Escolaridade" value={form.grade} onChange={v => setField("grade", v)} />
                   <InputField label="Escola" value={form.school} onChange={v => setField("school", v)} />
                   <InputField label="Responsável entrevistado" value={form.guardian} onChange={v => setField("guardian", v)} />
