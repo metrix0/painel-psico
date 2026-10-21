@@ -1116,10 +1116,6 @@ export default function Home() {
                   ))}
                 </div>
               </section>
-              <ReportSettings settings={reportSettings} status={saveLabel} onChange={settings => {
-                setReportSettings(settings);
-                autosave.track("report_settings:" + user.id, {settings});
-              }} />
               <section className="card">
                 <div className="cardhead"><h2>Configurar Instrumentos</h2><button className="btn soft" disabled={busy || templatesLoading} onClick={addInstrumentTemplate}>+ Criar instrumento</button></div>
                 <div className="cardbody instrument-list">
@@ -1138,6 +1134,10 @@ export default function Home() {
                   </div>)}
                 </div>
               </section>
+              <ReportSettings settings={reportSettings} status={saveLabel} onChange={settings => {
+                setReportSettings(settings);
+                autosave.track("report_settings:" + user.id, {settings});
+              }} />
             </div>
           </div> : !form ? <div className="empty-state">
             <h1>Pacientes</h1>
