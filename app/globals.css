@@ -282,3 +282,11 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
+
+/* Bottom settings entry: separate from patient navigation. */
+.sidebar-footer{margin-top:auto;display:flex;flex-direction:column;gap:4px}
+.sidebar-footer .signout{margin-top:0}
+.settings-link{display:block;width:100%;border:0;border-radius:10px;background:transparent;color:#c8dcd3;text-align:left;padding:10px 12px;font-size:12px;font-weight:600;transition:background-color .18s ease,color .18s ease}
+.settings-link:hover{background:rgba(255,255,255,.07)}
+.settings-link.active{background:rgba(255,255,255,.13);color:#fff}
+.settings-empty{min-height:72px}

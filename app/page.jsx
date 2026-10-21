@@ -545,7 +545,6 @@ export default function Home() {
         <div className="side-section">
           <div className="side-label">Pacientes</div>
           <input className="patient-search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar paciente" />
-          {!search.trim() && <div className="recent-label">Recentes</div>}
           <div className="patient-links" aria-label={search.trim() ? "Resultados da busca" : "Pacientes recentes"}>
             {listed.map(p => <button key={p.id} className={selectedId === p.id ? "patient-link active" : "patient-link"} onClick={() => void selectPatient(p.id)}>{p.name}</button>)}
             {!listed.length && <span className="side-empty">{search.trim() ? "Nenhum resultado" : "Nenhum paciente"}</span>}
@@ -558,14 +557,19 @@ export default function Home() {
             ["instrumentos", "Instrumentos"], ["laudo", "Laudo"]
           ].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => openTab(key)}>{label}</button>)}
         </nav>}
-        <button className="signout" onClick={signOut}>Sair</button>
+        <div className="sidebar-footer">
+          <button type="button" className={"settings-link" + (tab === "configuracoes" ? " active" : "")}
+            aria-current={tab === "configuracoes" ? "page" : undefined}
+            onClick={() => openTab("configuracoes")}>Configurações</button>
+          <button className="signout" onClick={signOut}>Sair</button>
+        </div>
       </aside>
 
       <main onBlurCapture={() => { if (autosave.isPending()) void autosave.flushAll(); }}>
         <header className="topbar">
           <button className="menu-btn" aria-label="Abrir menu" onClick={() => setMenuOpen(true)}>☰</button>
-          <strong>{form?.name || "Painel Psico"}</strong>
-          <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
+          <strong>{tab === "configuracoes" ? "Configurações" : form?.name || "Painel Psico"}</strong>
+          {tab !== "configuracoes" && <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>}
         </header>
 
         <div className="content">
@@ -580,7 +584,17 @@ export default function Home() {
             </form>
           </div>}
 
-          {!form ? <div className="empty-state">
+          {tab === "configuracoes" ? <div className="settings-page">
+            <div className="hero"><h1>Configurações</h1></div>
+            <div className="content-stack">
+              {["Configurar Anamneses", "Configurar Sessões", "Configurar Instrumentos"].map(label => (
+                <section className="card" key={label}>
+                  <div className="cardhead"><h2>{label}</h2></div>
+                  <div className="cardbody settings-empty" />
+                </section>
+              ))}
+            </div>
+          </div> : !form ? <div className="empty-state">
             <h1>Pacientes</h1>
             <p>Selecione um paciente ou crie um novo registro.</p>
             <button className="btn primary" onClick={() => setCreating(true)}>+ Novo paciente</button>
