@@ -32,6 +32,19 @@ const formatDate = (value) => {
   return parts.length === 3 ? parts[2] + "/" + parts[1] + "/" + parts[0] : value;
 };
 
+function formatAge(birthDate) {
+  if (!birthDate) return null;
+  const [year, month, day] = birthDate.split("-").map(Number);
+  if (!year || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const today = new Date();
+  let years = today.getFullYear() - year;
+  let months = (today.getMonth() + 1) - month;
+  if (today.getDate() < day) months -= 1;
+  if (months < 0) { years -= 1; months += 12; }
+  if (years < 0) return null;
+  return `${years} ${years === 1 ? "ano" : "anos"} ${months} ${months === 1 ? "mês" : "meses"}`;
+}
+
 function InputField({ label, value, onChange, type = "text", placeholder = "" }) {
   return (
     <label className="field">
@@ -136,6 +149,9 @@ export default function Home() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [search, setSearch] = useState("");
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef(null);
   const autosave = useAutosave();
   const switchingPatient = useRef(false);
 
@@ -163,6 +179,51 @@ export default function Home() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setProfilePhotoUrl("");
+    if (!user?.id || !supabase) return;
+    const path = user.id + "/avatar";
+    void supabase.storage.from("psico-avatars").createSignedUrl(path, 3600)
+      .then(({ data, error }) => {
+        if (active && !error && data?.signedUrl) setProfilePhotoUrl(data.signedUrl);
+      });
+    return () => { active = false; };
+  }, [user?.id]);
+
+  async function uploadProfilePhoto(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !user?.id) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setNotice("Escolha uma foto JPG, PNG ou WebP.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setNotice("A foto deve ter até 2 MB.");
+      return;
+    }
+    setPhotoUploading(true);
+    try {
+      const path = user.id + "/avatar";
+      const bucket = supabase.storage.from("psico-avatars");
+      const { error: uploadError } = await bucket.upload(path, file, {
+        cacheControl: "60",
+        contentType: file.type,
+        upsert: true
+      });
+      if (uploadError) throw uploadError;
+      const { data, error: urlError } = await bucket.createSignedUrl(path, 3600);
+      if (urlError || !data?.signedUrl) throw urlError || new Error("Foto indisponível.");
+      setProfilePhotoUrl(data.signedUrl + "&v=" + Date.now());
+      setNotice("Foto de perfil atualizada.");
+    } catch (error) {
+      setNotice("Não foi possível salvar a foto: " + (error?.message || "erro desconhecido"));
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
 
   useEffect(() => {
     if (!user || !supabase) {
@@ -558,6 +619,35 @@ export default function Home() {
           ].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => openTab(key)}>{label}</button>)}
         </nav>}
         <div className="sidebar-footer">
+          <div className="user-profile">
+            <button type="button" className="profile-photo-button"
+              disabled={photoUploading}
+              aria-label={photoUploading ? "Enviando foto" : "Adicionar ou alterar foto do perfil"}
+              title="Adicionar ou alterar foto do perfil"
+              onClick={() => photoInputRef.current?.click()}>
+              {profilePhotoUrl
+                ? <img src={profilePhotoUrl} alt="" className="profile-photo" />
+                : <svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="8" r="4" />
+                    <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+                  </svg>}
+              <span className="profile-photo-edit" aria-hidden="true">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 5h-4l-2 3H4v11h16V8h-4l-2-3Z" />
+                  <circle cx="12" cy="13" r="3" />
+                </svg>
+              </span>
+            </button>
+            <input ref={photoInputRef} className="profile-photo-input" type="file"
+              accept="image/jpeg,image/png,image/webp"
+              aria-label="Selecionar foto de perfil" onChange={uploadProfilePhoto} />
+            <div className="user-profile-info">
+              <strong>{user.user_metadata?.full_name || user.email?.split("@")[0] || "Perfil"}</strong>
+              <span>{photoUploading ? "Enviando foto..." : user.email}</span>
+            </div>
+          </div>
           <button type="button" className={"settings-link" + (tab === "configuracoes" ? " active" : "")}
             aria-current={tab === "configuracoes" ? "page" : undefined}
             onClick={() => openTab("configuracoes")}>Configurações</button>
@@ -608,7 +698,7 @@ export default function Home() {
             </div>
 
             <div className="summary">
-              <div className="stat"><span>Paciente</span><b>{form.birth_date ? formatDate(form.birth_date) : "Cadastro"}</b></div>
+              <div className="stat"><span>Idade</span><b>{formatAge(form.birth_date) || "—"}</b></div>
               <div className="stat"><span>Sessões</span><b>{sessions.length}</b></div>
               <div className="stat"><span>Instrumentos</span><b>{complete}/{instruments.length}</b></div>
               <div className="stat"><span>Pendentes</span><b>{missing}</b></div>
