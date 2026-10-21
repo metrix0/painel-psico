@@ -316,36 +316,66 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 .settings-link.active{background:rgba(255,255,255,.13);color:#fff}
 .settings-empty{min-height:72px}
 
-/* Profile image in the sidebar footer */
-.user-profile{
-  display:flex;align-items:center;gap:11px;
-  padding:12px 8px;margin-bottom:7px;
-  border-bottom:1px solid rgba(255,255,255,.13);
-  min-width:0;
+/* Patient photos and sidebar thumbnails */
+.patient-links .patient-link{display:flex;align-items:center;gap:9px;min-width:0}
+.patient-sidebar-avatar{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;
+  border-radius:50%;background:rgba(255,255,255,.13);color:#fff;font-size:12px;font-weight:700;overflow:hidden}
+.patient-sidebar-avatar img{width:100%;height:100%;object-fit:cover}
+.patient-sidebar-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.patient-heading{display:flex;align-items:center;gap:15px;min-width:0}
+.patient-heading-text{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+.patient-heading-text h1{overflow-wrap:anywhere}
+.patient-photo-button{width:66px;height:66px;flex:0 0 66px;border:1px solid var(--line);border-radius:50%;
+  position:relative;display:grid;place-items:center;overflow:visible;color:var(--brand);
+  background:var(--brand3);font-size:26px;font-weight:700;padding:0}
+.patient-photo-button>img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
+.patient-photo-edit{position:absolute;bottom:-2px;right:-3px;display:grid;place-items:center;
+  width:24px;height:24px;border-radius:50%;border:1px solid var(--line);
+  background:#fff;color:var(--brand);font-size:15px}
+.patient-photo-button:hover{border-color:#79aa96}
+.patient-photo-button:disabled{opacity:.6;cursor:wait}
+.patient-photo-button:focus-visible{outline:2px solid #79aa96;outline-offset:3px}
+.patient-photo-input{position:absolute;width:1px;height:1px;padding:0;opacity:0;pointer-events:none;
+  overflow:hidden;clip-path:inset(50%)}
+.patient-photo-remove{font-size:11px;color:var(--muted);padding:5px 0}
+.consultation-datetime{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.7fr);gap:12px;align-items:end}
+@media(max-width:520px){
+  .patient-photo-button{width:55px;height:55px;flex-basis:55px}
+  .patient-heading{gap:12px}
+  .consultation-datetime{grid-template-columns:minmax(0,1fr) minmax(0,.7fr);gap:8px}
 }
-.profile-photo-button{
-  position:relative;display:grid;place-items:center;flex:0 0 42px;
-  width:42px;height:42px;padding:0;border:1px solid rgba(255,255,255,.26);
-  border-radius:50%;background:rgba(255,255,255,.14);color:#fff;
-  cursor:pointer;overflow:hidden;transition:background .2s ease,transform .2s ease;
-}
-.profile-photo-button:hover{background:rgba(255,255,255,.23);transform:scale(1.04)}
-.profile-photo-button:focus-visible{outline:2px solid #a5d6bd;outline-offset:3px}
-.profile-photo-button:disabled{opacity:.6;cursor:wait}
-.profile-photo{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
-.profile-photo-edit{
-  position:absolute;bottom:0;right:0;display:grid;place-items:center;
-  width:17px;height:17px;border-radius:50%;
-  background:#eef6f2;color:#204d3e;border:1px solid #204d3e;
-}
-.profile-photo-input{
-  position:absolute;width:1px;height:1px;padding:0;opacity:0;pointer-events:none;
-  overflow:hidden;clip-path:inset(50%);
-}
-.user-profile-info{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
-.user-profile-info strong{font-size:12px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.user-profile-info span{font-size:10px;color:#aac4b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* Shared calendar */
+.psico-date-trigger{width:100%;min-height:39px;padding:10px 11px;
+  background:#fbfcfb;border:1px solid #d8e2dd;border-radius:9px;color:var(--text);
+  display:flex;justify-content:space-between;align-items:center;gap:7px;font-size:13px;text-align:left}
+.psico-date-trigger svg{flex:none;color:var(--brand)}
+.psico-date-trigger:hover,.psico-date-trigger.is-open{border-color:#79aa96;background:#fff}
+.psico-date-trigger:focus-visible{outline:2px solid #79aa96;outline-offset:2px}
+.psico-date-placeholder{color:var(--muted)}
+.psico-calendar{position:fixed;z-index:200;width:288px;max-width:calc(100vw - 16px);padding:12px;
+  border:1px solid #d8e2dd;border-radius:13px;background:#fff;
+  box-shadow:0 14px 35px rgba(18,51,38,.16)}
+.psico-calendar-head{display:flex;align-items:center;gap:5px;margin-bottom:12px}
+.psico-calendar-head button{width:28px;height:30px;flex:none;border:0;border-radius:7px;background:var(--brand3);
+  color:var(--brand);font-size:21px;line-height:1}
+.psico-calendar-head select{flex:1;min-width:0;padding:7px 4px;font-size:12px}
+.psico-calendar-head input{width:66px;min-width:0;padding:7px 3px;text-align:center;font-size:12px;
+  -moz-appearance:textfield;appearance:textfield}
+.psico-calendar-head input::-webkit-inner-spin-button,
+.psico-calendar-head input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.psico-calendar-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center}
+.psico-calendar-days .psico-weekday{font-size:10px;color:var(--muted);font-weight:700;padding:7px 0}
+.psico-calendar-days button{width:100%;height:32px;display:grid;place-items:center;padding:0;
+  border:0;border-radius:8px;background:transparent;color:var(--text);font-size:12px}
+.psico-calendar-days button:hover{background:var(--brand3)}
+.psico-calendar-days button.today{outline:1px solid #b4d0bf;outline-offset:-1px}
+.psico-calendar-days button.selected{color:#fff;background:var(--brand)}
+.psico-calendar-actions{display:flex;justify-content:space-between;gap:10px;
+  padding-top:9px;margin-top:10px;border-top:1px solid var(--line)}
+.psico-calendar-actions button{background:transparent;border:0;border-radius:6px;padding:5px 8px;
+  color:var(--brand);font-size:11px;font-weight:700}
+.psico-calendar-actions button:hover{background:var(--brand3)}
 
 /* Anamnese templates */
 .anamnese-template-layout{
