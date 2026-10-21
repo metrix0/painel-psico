@@ -11,10 +11,10 @@ export default function QuestionAnswerInput({
       {field.label || "Pergunta sem nome"}{field.archived ? " (arquivado)" : ""}
     </span>
     {field.field_type === "textarea" ? (
-      <textarea value={typeof value === "string" ? value : ""} disabled={inactive}
+      <textarea aria-label={field.label || "Pergunta sem nome"} value={typeof value === "string" ? value : ""} disabled={inactive}
         onChange={event => onChange(event.target.value)} />
     ) : field.field_type === "text" ? (
-      <input value={typeof value === "string" ? value : ""} disabled={inactive}
+      <input aria-label={field.label || "Pergunta sem nome"} value={typeof value === "string" ? value : ""} disabled={inactive}
         onChange={event => onChange(event.target.value)} />
     ) : field.field_type === "single" ? (
       <div className="custom-choices">

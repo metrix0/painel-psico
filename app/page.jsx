@@ -6,6 +6,9 @@ import { useAutosave } from "../lib/useAutosave";
 import QuestionAnswerInput from "../components/QuestionAnswerInput";
 import { InstrumentTable, TableEditor } from "../components/InstrumentTables";
 import { createTable, instantiateTables } from "../lib/instrumentTables.mjs";
+import InstrumentFormEditor from "../components/InstrumentFormEditor";
+import InstrumentDelivery from "../components/InstrumentDelivery";
+import { deliveryDate, instrumentForm, waitingInSession } from "../lib/instrumentDelivery.mjs";
 
 const EMPTY_ANAMNESE = {
   motivo: "",
@@ -132,7 +135,7 @@ function instrumentPayload(instrument) {
 }
 
 function templatePayload(template) {
-  return { name: template.name || "", category: template.category || "", tables: template.tables || [] };
+  return { name: template.name || "", category: template.category || "", tables: template.tables || [], form_questions: template.form_questions ?? null };
 }
 
 function AnimatedSelect({ label, value, onChange, options }) {
@@ -211,6 +214,8 @@ export default function Home() {
   const photoInputRef = useRef(null);
   const autosave = useAutosave();
   const switchingPatient = useRef(false);
+  const deliveryRevision = useRef(0);
+  const deliveryActionInFlight = useRef(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.slice(1));
@@ -391,7 +396,7 @@ export default function Home() {
     async function load() {
       const [s, i] = await Promise.all([
         supabase.from("psico_sessions").select("*").eq("patient_id", selectedId).order("created_at", { ascending: false }),
-        supabase.from("psico_instruments").select("*").eq("patient_id", selectedId).order("created_at", { ascending: true })
+        supabase.from("psico_instruments").select("*, form:psico_instrument_forms(*)").eq("patient_id", selectedId).order("created_at", { ascending: true })
       ]);
       if (cancelled) return;
       if (s.error || i.error) setNotice(s.error?.message || i.error?.message);
@@ -406,6 +411,28 @@ export default function Home() {
     load();
     return () => { cancelled = true; };
   }, [selectedId, user?.id]);
+
+  const hasOpenInstrumentForms = instruments.some(i => instrumentForm(i) && !i.received_at);
+  useEffect(() => {
+    if (!user?.id || !selectedId) return;
+    let cancelled = false;
+    async function refreshDelivery() {
+      if (document.visibilityState === "hidden" || autosave.isPending() || deliveryActionInFlight.current) return;
+      const revision = deliveryRevision.current;
+      const { data, error } = await supabase.from("psico_instruments")
+        .select("*, form:psico_instrument_forms(*)").eq("patient_id", selectedId).order("created_at", { ascending: true });
+      if (cancelled || error || autosave.isPending() || deliveryActionInFlight.current || revision !== deliveryRevision.current) return;
+      setInstruments(prev => prev.map(instrument => {
+        const fresh = (data || []).find(row => row.id === instrument.id);
+        return fresh ? { ...instrument, sent_at: fresh.sent_at, received_at: fresh.received_at,
+          sent_session_id: fresh.sent_session_id, received_session_id: fresh.received_session_id,
+          form: fresh.form, status: fresh.received_at ? "Concluído" : instrument.status } : instrument;
+      }));
+    }
+    window.addEventListener("focus", refreshDelivery);
+    const timer = hasOpenInstrumentForms ? setInterval(() => void refreshDelivery(), 15000) : null;
+    return () => { cancelled = true; window.removeEventListener("focus", refreshDelivery); if (timer) clearInterval(timer); };
+  }, [selectedId, user?.id, hasOpenInstrumentForms]);
 
   function openTab(name) {
     void autosave.flushAll();
@@ -697,8 +724,8 @@ export default function Home() {
   }
 
   async function deleteSession(id) {
-    if (instruments.some(i => i.session_id === id)) {
-      setNotice("Esta sessão possui instrumentos vinculados. Altere a sessão desses instrumentos antes de excluir.");
+    if (instruments.some(i => i.session_id === id || i.sent_session_id === id || i.received_session_id === id || instrumentForm(i)?.source_session_id === id)) {
+      setNotice("Esta sessão possui instrumentos vinculados ou registros de envio/recebimento e não pode ser excluída.");
       return;
     }
     if (!window.confirm("Excluir esta sessão?")) return;
@@ -750,7 +777,7 @@ export default function Home() {
     if (!await autosave.flushAll()) { setBusy(false); return; }
     const { data, error } = await supabase.from("psico_instruments").insert({
       patient_id: selectedId, template_id: template.id, name: template.name, category: template.category,
-      status: "Pendente", notes: "", tables: instantiateTables(template.tables || [])
+      status: "Pendente", notes: "", tables: instantiateTables(template.tables || []), form_questions: template.form_questions ?? null
     }).select().single();
     if (error) setNotice(error.message);
     else {
@@ -769,6 +796,22 @@ export default function Home() {
 
   function changeInstrument(id, field, value) {
     updateInstrument(id, i => ({ ...i, [field]: value }));
+  }
+
+  async function instrumentAction(id, action, sessionId = null) {
+    if (busy || deliveryActionInFlight.current) return;
+    deliveryActionInFlight.current = true;
+    deliveryRevision.current += 1;
+    setBusy(true);
+    try {
+      if (!await autosave.flushAll()) { setNotice("Não foi possível salvar as alterações pendentes."); return; }
+      const { data, error } = await supabase.rpc("psico_instrument_action", { p_id: id, p_action: action, p_session_id: sessionId });
+      if (error) throw error;
+      const next = { ...data.instrument, form: data.form };
+      autosave.register("instrument:" + id, instrumentPayload(next));
+      setInstruments(prev => prev.map(i => i.id === id ? next : i));
+    } catch (err) { setNotice(err?.message || "Não foi possível atualizar o instrumento."); }
+    finally { deliveryActionInFlight.current = false; setBusy(false); }
   }
 
   async function deleteInstrument(id) {
@@ -1065,6 +1108,7 @@ export default function Home() {
                       onChange={next => changeTemplate(t.id, { tables: t.tables.map(item => item.id === table.id ? next : item) })}
                       onRemove={() => { if (window.confirm("Remover esta tabela do modelo?")) changeTemplate(t.id, { tables: t.tables.filter(item => item.id !== table.id) }); }} />)}
                     <button className="btn soft" onClick={() => changeTemplate(t.id, { tables: [...(t.tables || []), createTable()] })}>+ Adicionar tabela</button>
+                    <InstrumentFormEditor questions={t.form_questions ?? null} onChange={form_questions => changeTemplate(t.id, { form_questions })} />
                     <button className="text-btn" onClick={() => void archiveTemplate(t.id)}>Remover instrumento</button>
                   </div>)}
                 </div>
@@ -1166,6 +1210,14 @@ export default function Home() {
                     <span>{s.duration_minutes} min</span>
                     <span className={"session-chevron" + (expandedSessions[s.id] ? " expanded" : "")} aria-hidden="true">⌄</span>
                   </button>
+                  {instruments.some(i => i.sent_session_id === s.id || i.received_session_id === s.id) && <div className="session-instrument-labels">
+                    {instruments.filter(i => i.sent_session_id === s.id).map(i => <span className="instrument-badge" key={i.id + "-sent"}>{i.name} Enviado</span>)}
+                    {instruments.filter(i => i.received_session_id === s.id).map(i => <span className="instrument-badge received" key={i.id + "-received"}>{i.name} Recebido</span>)}
+                  </div>}
+                  {instruments.filter(i => waitingInSession(i, s, sessions)).map(i => <div className="instrument-waiting" key={i.id}>
+                    <span>Aguardando conclusão de <strong>{i.name}</strong> · enviado em {deliveryDate(i.sent_at)}</span>
+                    <button className="btn" disabled={busy} onClick={() => void instrumentAction(i.id, "receive", s.id)}>Marcar como recebido</button>
+                  </div>)}
                   {expandedSessions[s.id] && <div className="session-details">
                     <div className="session-fields">
                       <InputField label="Título" value={s.title} onChange={v => changeSession(s.id, "title", v)} />
@@ -1200,9 +1252,10 @@ export default function Home() {
                 {!sessions.length && <p className="muted">Crie uma sessão antes de adicionar um instrumento.</p>}
                 {!instruments.length && <p className="muted">Nenhum instrumento registrado.</p>}
                 {instruments.map(i => <div className="instrument-entry" key={i.id}>
+                  <fieldset className="instrument-fields" disabled={busy}>
                   <div className="instrument-head">
                     <div><h3>{i.name}</h3>{i.category && <p className="muted">{i.category}</p>}</div>
-                    <AnimatedSelect label="Status" value={i.status} options={["Pendente", "Em andamento", "Concluído"]} onChange={v => changeInstrument(i.id, "status", v)} />
+                    {i.received_at ? <div className="field"><span>Status</span><b>Concluído</b></div> : <AnimatedSelect label="Status" value={i.status} options={["Pendente", "Em andamento", "Concluído"]} onChange={v => changeInstrument(i.id, "status", v)} />}
                   </div>
                   <label className="field"><span>Sessão</span><select aria-label="Sessão" value={i.session_id || ""} onChange={e => changeInstrument(i.id, "session_id", e.target.value)}>
                     <option value="" disabled>Selecione uma sessão</option>
@@ -1211,7 +1264,10 @@ export default function Home() {
                   {(i.tables || []).map(table => <InstrumentTable key={table.id} table={table}
                     onChange={next => changeInstrument(i.id, "tables", i.tables.map(item => item.id === table.id ? next : item))} />)}
                   <label className="question"><span>Observações</span><textarea aria-label="Observações" value={i.notes || ""} onChange={e => changeInstrument(i.id, "notes", e.target.value)} /></label>
+                  <InstrumentDelivery instrument={i} sessions={sessions} busy={busy} onAction={instrumentAction}
+                    hasForm={Boolean((i.form_questions ?? instrumentTemplates.find(t => t.id === i.template_id)?.form_questions)?.length)} />
                   <div className="card-actions"><button className="btn danger" onClick={() => void deleteInstrument(i.id)}>Excluir</button></div>
+                  </fieldset>
                 </div>)}
               </div>
             </section>}
