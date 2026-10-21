@@ -74,8 +74,60 @@ function sessionPayload(session) {
     occurred_on: session.occurred_on,
     duration_minutes: Number(session.duration_minutes),
     title: session.title || "",
-    notes: session.notes || ""
+    notes: session.notes || "",
+    custom_fields: session.custom_fields || {}
   };
+}
+
+function sessionFieldPayload(field) {
+  return {
+    label: field.label || "",
+    field_type: field.field_type,
+    options: field.options || [],
+    position: field.position
+  };
+}
+
+function SessionCustomFields({ fields, values, onChange }) {
+  if (!fields.length) return null;
+  return <div className="session-custom-fields">
+    {fields.map(field => {
+      const value = values?.[field.id];
+      const choices = (field.options || []).filter(option => option.trim());
+      return <div className="session-custom-field" key={field.id}>
+        <span className="custom-field-label">{field.label || "Campo sem nome"}{field.archived ? " (arquivado)" : ""}</span>
+        {field.field_type === "textarea" ? (
+          <textarea value={typeof value === "string" ? value : ""} disabled={field.archived}
+            onChange={event => onChange(field.id, event.target.value)} />
+        ) : field.field_type === "text" ? (
+          <input value={typeof value === "string" ? value : ""} disabled={field.archived}
+            onChange={event => onChange(field.id, event.target.value)} />
+        ) : field.field_type === "single" ? (
+          <div className="custom-choices">
+            {choices.map((option, index) => <label className="custom-choice" key={index}>
+              <input type="radio" name={"session-" + field.id} checked={value === option}
+                disabled={field.archived} onChange={() => onChange(field.id, option)} />
+              <span>{option}</span>
+            </label>)}
+          </div>
+        ) : (
+          <div className="custom-choices">
+            {choices.map((option, index) => <label className="custom-choice" key={index}>
+              <input type="checkbox" checked={Array.isArray(value) && value.includes(option)}
+                disabled={field.archived}
+                onChange={event => {
+                  const current = Array.isArray(value) ? value : [];
+                  onChange(field.id, event.target.checked
+                    ? [...current.filter(item => item !== option), option]
+                    : current.filter(item => item !== option));
+                }} />
+              <span>{option}</span>
+            </label>)}
+          </div>
+        )}
+      </div>;
+    })}
+  </div>;
 }
 
 function instrumentPayload(instrument) {
@@ -143,6 +195,9 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [sessionFields, setSessionFields] = useState([]);
+  const [sessionFieldsLoading, setSessionFieldsLoading] = useState(false);
+  const [expandedSessions, setExpandedSessions] = useState({});
   const [instruments, setInstruments] = useState([]);
   const [tab, setTab] = useState("anamnese");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -248,6 +303,26 @@ export default function Home() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!user?.id || !supabase) {
+      setSessionFields([]);
+      return;
+    }
+    let cancelled = false;
+    setSessionFieldsLoading(true);
+    async function loadSessionFields() {
+      const { data, error } = await supabase.from("psico_session_fields")
+        .select("*").order("position", { ascending: true }).order("created_at", { ascending: true });
+      if (cancelled) return;
+      setSessionFieldsLoading(false);
+      if (error) { setNotice(error.message); return; }
+      for (const field of data || []) autosave.register("session_field:" + field.id, sessionFieldPayload(field));
+      setSessionFields(data || []);
+    }
+    void loadSessionFields();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  useEffect(() => {
     const patient = patients.find(p => p.id === selectedId);
     if (!patient) { setForm(null); return; }
     const next = { ...patient, anamnese: { ...EMPTY_ANAMNESE, ...(patient.anamnese || {}) } };
@@ -272,7 +347,7 @@ export default function Home() {
     let cancelled = false;
     async function load() {
       const [s, i] = await Promise.all([
-        supabase.from("psico_sessions").select("*").eq("patient_id", selectedId).order("occurred_on", { ascending: true }),
+        supabase.from("psico_sessions").select("*").eq("patient_id", selectedId).order("created_at", { ascending: false }),
         supabase.from("psico_instruments").select("*").eq("patient_id", selectedId).order("created_at", { ascending: true })
       ]);
       if (cancelled) return;
@@ -281,6 +356,7 @@ export default function Home() {
         for (const session of s.data || []) autosave.register("session:" + session.id, sessionPayload(session));
         for (const instrument of i.data || []) autosave.register("instrument:" + instrument.id, instrumentPayload(instrument));
         setSessions(s.data || []);
+        setExpandedSessions((s.data || []).length ? { [s.data[0].id]: true } : {});
         setInstruments(i.data || []);
       }
     }
@@ -426,18 +502,56 @@ export default function Home() {
     setBusy(false);
   }
 
+  async function addSessionField() {
+    setBusy(true);
+    const position = Math.max(0, ...sessionFields.map(field => field.position || 0)) + 1;
+    const { data, error } = await supabase.from("psico_session_fields").insert({
+      label: "Novo campo", field_type: "text", options: [], position
+    }).select().single();
+    if (error) setNotice(error.message);
+    else {
+      autosave.register("session_field:" + data.id, sessionFieldPayload(data));
+      setSessionFields(prev => [...prev, data]);
+    }
+    setBusy(false);
+  }
+
+  function changeSessionFieldDefinition(id, patch) {
+    const next = sessionFields.map(field => field.id === id ? { ...field, ...patch } : field);
+    setSessionFields(next);
+    const changed = next.find(field => field.id === id);
+    if (changed) autosave.track("session_field:" + id, sessionFieldPayload(changed));
+  }
+
+  async function archiveSessionField(id) {
+    if (!window.confirm("Remover este campo das próximas sessões? As respostas antigas serão preservadas.")) return;
+    if (!await autosave.flushAll()) {
+      setNotice("Não foi possível salvar as alterações pendentes.");
+      return;
+    }
+    const { error } = await supabase.from("psico_session_fields").update({ archived: true }).eq("id", id);
+    if (error) setNotice(error.message);
+    else setSessionFields(prev => prev.map(field => field.id === id ? { ...field, archived: true } : field));
+  }
+
   async function addSession() {
     setBusy(true);
+    const highestIndex = sessions.reduce((max, session) => {
+      const match = /^Sessão\s+(\d+)\b/i.exec(session.title || "");
+      return Math.max(max, match ? Number(match[1]) : 0);
+    }, sessions.length);
     const { data, error } = await supabase.from("psico_sessions").insert({
       patient_id: selectedId,
       occurred_on: new Date().toLocaleDateString("en-CA"),
-      title: "Nova sessão",
+      duration_minutes: 60,
+      title: "Sessão " + (highestIndex + 1),
       notes: ""
     }).select().single();
     if (error) setNotice(error.message);
     else {
       autosave.register("session:" + data.id, sessionPayload(data));
-      setSessions(prev => [...prev, data]);
+      setSessions(prev => [data, ...prev]);
+      setExpandedSessions(prev => ({ ...prev, [data.id]: true }));
     }
     setBusy(false);
   }
@@ -447,6 +561,10 @@ export default function Home() {
     setSessions(next);
     const changed = next.find(s => s.id === id);
     if (changed) autosave.track("session:" + id, sessionPayload(changed));
+  }
+
+  function changeSessionCustomField(session, fieldId, value) {
+    changeSession(session.id, "custom_fields", { ...(session.custom_fields || {}), [fieldId]: value });
   }
 
   async function deleteSession(id) {
@@ -460,6 +578,7 @@ export default function Home() {
     else {
       autosave.forget("session:" + id);
       setSessions(prev => prev.filter(s => s.id !== id));
+      setExpandedSessions(prev => { const next = { ...prev }; delete next[id]; return next; });
     }
   }
 
@@ -596,7 +715,8 @@ export default function Home() {
   const anamnese = form?.anamnese || EMPTY_ANAMNESE;
   const complete = instruments.filter(i => i.status === "Concluído").length;
   const missing = instruments.filter(i => i.status !== "Concluído").length;
-  const latestDate = sessions.length ? sessions[sessions.length - 1].occurred_on : null;
+  const latestDate = sessions.reduce((latest, session) =>
+    session.occurred_on && (!latest || session.occurred_on > latest) ? session.occurred_on : latest, null);
 
   return (
     <div className="app">
@@ -677,12 +797,53 @@ export default function Home() {
           {tab === "configuracoes" ? <div className="settings-page">
             <div className="hero"><h1>Configurações</h1></div>
             <div className="content-stack">
-              {["Configurar Anamneses", "Configurar Sessões", "Configurar Instrumentos"].map(label => (
-                <section className="card" key={label}>
-                  <div className="cardhead"><h2>{label}</h2></div>
-                  <div className="cardbody settings-empty" />
-                </section>
-              ))}
+              <section className="card">
+                <div className="cardhead"><h2>Configurar Anamneses</h2></div>
+                <div className="cardbody settings-empty" />
+              </section>
+              <section className="card">
+                <div className="cardhead">
+                  <h2>Configurar Sessões</h2>
+                  <button className="btn soft" disabled={busy || sessionFieldsLoading} onClick={addSessionField}>+ Adicionar campo</button>
+                </div>
+                <div className="cardbody session-field-config">
+                  <p className="muted">Os campos aparecem antes de Observações em todas as sessões. As alterações são salvas automaticamente.</p>
+                  {sessionFieldsLoading && <p className="muted">Carregando campos…</p>}
+                  {!sessionFieldsLoading && !sessionFields.some(field => !field.archived) &&
+                    <p className="muted">Nenhum campo personalizado configurado.</p>}
+                  {sessionFields.filter(field => !field.archived).map(field => (
+                    <div className="session-field-editor" key={field.id}>
+                      <div className="session-field-config-row">
+                        <InputField label="Nome do campo" value={field.label}
+                          onChange={value => changeSessionFieldDefinition(field.id, { label: value })} />
+                        <label className="field"><span>Tipo de resposta</span>
+                          <select value={field.field_type}
+                            onChange={event => changeSessionFieldDefinition(field.id, { field_type: event.target.value })}>
+                            <option value="text">Texto curto</option>
+                            <option value="textarea">Texto longo</option>
+                            <option value="single">Escolha única (círculos)</option>
+                            <option value="multiple">Múltipla escolha</option>
+                          </select>
+                        </label>
+                      </div>
+                      {(field.field_type === "single" || field.field_type === "multiple") &&
+                        <label className="field"><span>Opções (uma por linha)</span>
+                          <textarea rows={4} value={(field.options || []).join("\n")}
+                            placeholder={"Opção 1\nOpção 2"}
+                            onChange={event => changeSessionFieldDefinition(field.id,
+                              { options: event.target.value.split("\n") })} />
+                        </label>}
+                      <div className="card-actions">
+                        <button className="text-btn" onClick={() => void archiveSessionField(field.id)}>Remover campo</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="card">
+                <div className="cardhead"><h2>Configurar Instrumentos</h2></div>
+                <div className="cardbody settings-empty" />
+              </section>
             </div>
           </div> : !form ? <div className="empty-state">
             <h1>Pacientes</h1>
@@ -742,13 +903,29 @@ export default function Home() {
               <div className="cardbody">
                 {!sessions.length && <p className="muted">Nenhuma sessão registrada.</p>}
                 {sessions.map(s => <div className="session-entry" key={s.id}>
-                  <div className="session-fields">
-                    <InputField label="Data" type="date" value={s.occurred_on} onChange={v => changeSession(s.id, "occurred_on", v)} />
-                    <InputField label="Duração (min)" type="number" value={String(s.duration_minutes)} onChange={v => changeSession(s.id, "duration_minutes", v)} />
-                  </div>
-                  <InputField label="Título" value={s.title} onChange={v => changeSession(s.id, "title", v)} />
-                  <label className="question"><span>Observações</span><textarea value={s.notes || ""} onChange={e => changeSession(s.id, "notes", e.target.value)} /></label>
-                  <div className="card-actions"><button className="btn danger" onClick={() => void deleteSession(s.id)}>Excluir</button></div>
+                  <button type="button" className="session-summary" aria-expanded={!!expandedSessions[s.id]}
+                    onClick={() => setExpandedSessions(prev => ({ ...prev, [s.id]: !prev[s.id] }))}>
+                    <strong>{s.title || "Sessão"}</strong>
+                    <span>{formatDate(s.occurred_on)}</span>
+                    <span>{s.duration_minutes} min</span>
+                    <span className={"session-chevron" + (expandedSessions[s.id] ? " expanded" : "")} aria-hidden="true">⌄</span>
+                  </button>
+                  {expandedSessions[s.id] && <div className="session-details">
+                    <div className="session-fields">
+                      <InputField label="Título" value={s.title} onChange={v => changeSession(s.id, "title", v)} />
+                      <InputField label="Data" type="date" value={s.occurred_on} onChange={v => changeSession(s.id, "occurred_on", v)} />
+                      <InputField label="Duração (min)" type="number" value={String(s.duration_minutes)} onChange={v => changeSession(s.id, "duration_minutes", v)} />
+                    </div>
+                    <SessionCustomFields
+                      fields={sessionFields.filter(field => !field.archived ||
+                        Object.prototype.hasOwnProperty.call(s.custom_fields || {}, field.id))}
+                      values={s.custom_fields || {}}
+                      onChange={(fieldId, value) => changeSessionCustomField(s, fieldId, value)} />
+                    <label className="question"><span>Observações</span>
+                      <textarea value={s.notes || ""} onChange={e => changeSession(s.id, "notes", e.target.value)} />
+                    </label>
+                    <div className="card-actions"><button className="btn danger" onClick={() => void deleteSession(s.id)}>Excluir</button></div>
+                  </div>}
                 </div>)}
               </div>
             </section>}
