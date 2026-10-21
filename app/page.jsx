@@ -7,6 +7,8 @@ import QuestionAnswerInput from "../components/QuestionAnswerInput";
 import { InstrumentTable, TableEditor } from "../components/InstrumentTables";
 import { createTable, instantiateTables } from "../lib/instrumentTables.mjs";
 import InstrumentFormEditor from "../components/InstrumentFormEditor";
+import ChoiceOptionsEditor from "../components/ChoiceOptionsEditor";
+import { DEFAULT_CHOICES, newChoiceQuestion, typeChange } from "../lib/questionDefaults.mjs";
 import InstrumentDelivery from "../components/InstrumentDelivery";
 import ReportPanel from "../components/ReportPanel";
 import ReportSettings from "../components/ReportSettings";
@@ -648,7 +650,7 @@ export default function Home() {
     editAnamneseTemplate(id, template => ({
       ...template,
       questions: [...(template.questions || []), {
-        id: crypto.randomUUID(), label: "Nova pergunta", field_type: "text", options: []
+        ...newChoiceQuestion("Nova pergunta")
       }]
     }));
   }
@@ -710,7 +712,7 @@ export default function Home() {
     setBusy(true);
     const position = Math.max(0, ...sessionFields.map(field => field.position || 0)) + 1;
     const { data, error } = await supabase.from("psico_session_fields").insert({
-      label: "Novo campo", field_type: "text", options: [], position
+      label: "Novo campo", field_type: "single", options: [...DEFAULT_CHOICES], position
     }).select().single();
     if (error) setNotice(error.message);
     else {
@@ -1020,19 +1022,17 @@ export default function Home() {
                   <p className="muted">Crie um modelo com perguntas personalizadas. Cada paciente pode utilizar um modelo diferente. Alterações salvas automaticamente.</p>
                   {anamneseTemplatesLoading ? <p className="muted">Carregando modelos…</p>
                     : <div className="anamnese-template-layout">
-                      <div className="anamnese-template-list" aria-label="Modelos de anamnese">
-                        {anamneseTemplates.filter(template => !template.archived).map(template => (
-                          <button type="button" key={template.id}
-                            className={"anamnese-template-item" + (editingTemplateId === template.id ? " active" : "")}
-                            aria-pressed={editingTemplateId === template.id}
-                            onClick={() => setEditingTemplateId(template.id)}>
-                            <strong>{template.name || "Modelo sem nome"}</strong>
-                            <span>{(template.questions || []).length} perguntas</span>
-                          </button>
-                        ))}
-                        {!anamneseTemplates.some(template => !template.archived) &&
-                          <span className="muted">Nenhum modelo criado.</span>}
-                      </div>
+                      {anamneseTemplates.filter(template => !template.archived).length > 1 && (
+                        <label className="field anamnese-template-picker"><span>Selecionar modelo</span>
+                          <select value={editingTemplateId || ""} onChange={event => setEditingTemplateId(event.target.value)}>
+                            {anamneseTemplates.filter(template => !template.archived).map(template => (
+                              <option key={template.id} value={template.id}>{template.name || "Modelo sem nome"}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {!anamneseTemplates.some(template => !template.archived) &&
+                        <span className="muted">Nenhum modelo criado.</span>}
                       {editingAnamneseTemplate && <div className="anamnese-template-editor" key={editingAnamneseTemplate.id}>
                         <div className="anamnese-template-heading">
                           <InputField label="Nome do modelo" value={editingAnamneseTemplate.name}
@@ -1050,21 +1050,18 @@ export default function Home() {
                               <label className="field"><span>Tipo de resposta</span>
                                 <select value={question.field_type}
                                   onChange={event => editAnamneseQuestion(editingAnamneseTemplate.id, question.id,
-                                    { field_type: event.target.value })}>
+                                    typeChange(question, event.target.value))}>
                                   <option value="text">Texto curto</option>
                                   <option value="textarea">Texto longo</option>
-                                  <option value="single">Escolha única (círculos)</option>
+                                  <option value="single">Escolha única</option>
                                   <option value="multiple">Múltipla escolha</option>
                                 </select>
                               </label>
                             </div>
                             {(question.field_type === "single" || question.field_type === "multiple") &&
-                              <label className="field"><span>Opções (uma por linha)</span>
-                                <textarea rows={4} value={(question.options || []).join("\n")}
-                                  placeholder={"Opção 1\nOpção 2"}
-                                  onChange={event => editAnamneseQuestion(editingAnamneseTemplate.id, question.id,
-                                    { options: event.target.value.split("\n") })} />
-                              </label>}
+                              <ChoiceOptionsEditor label={question.label || "Pergunta " + (index + 1)}
+                                options={question.options || []} multiple={question.field_type === "multiple"}
+                                onChange={options => editAnamneseQuestion(editingAnamneseTemplate.id, question.id, { options })} />}
                             <button type="button" className="text-btn"
                               onClick={() => removeAnamneseQuestion(editingAnamneseTemplate.id, question.id)}>
                               Remover pergunta
@@ -1094,21 +1091,18 @@ export default function Home() {
                           onChange={value => changeSessionFieldDefinition(field.id, { label: value })} />
                         <label className="field"><span>Tipo de resposta</span>
                           <select value={field.field_type}
-                            onChange={event => changeSessionFieldDefinition(field.id, { field_type: event.target.value })}>
+                            onChange={event => changeSessionFieldDefinition(field.id, typeChange(field, event.target.value))}>
                             <option value="text">Texto curto</option>
                             <option value="textarea">Texto longo</option>
-                            <option value="single">Escolha única (círculos)</option>
+                            <option value="single">Escolha única</option>
                             <option value="multiple">Múltipla escolha</option>
                           </select>
                         </label>
                       </div>
                       {(field.field_type === "single" || field.field_type === "multiple") &&
-                        <label className="field"><span>Opções (uma por linha)</span>
-                          <textarea rows={4} value={(field.options || []).join("\n")}
-                            placeholder={"Opção 1\nOpção 2"}
-                            onChange={event => changeSessionFieldDefinition(field.id,
-                              { options: event.target.value.split("\n") })} />
-                        </label>}
+                        <ChoiceOptionsEditor label={field.label || "Novo campo"}
+                          options={field.options || []} multiple={field.field_type === "multiple"}
+                          onChange={options => changeSessionFieldDefinition(field.id, { options })} />}
                       <div className="card-actions">
                         <button className="text-btn" onClick={() => void archiveSessionField(field.id)}>Remover campo</button>
                       </div>
@@ -1119,7 +1113,6 @@ export default function Home() {
               <section className="card">
                 <div className="cardhead"><h2>Configurar Instrumentos</h2><button className="btn soft" disabled={busy || templatesLoading} onClick={addInstrumentTemplate}>+ Criar instrumento</button></div>
                 <div className="cardbody instrument-list">
-                  <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
                   {templatesLoading && <p className="muted">Carregando instrumentos…</p>}
                   {!templatesLoading && !instrumentTemplates.some(t => !t.archived) && <p className="muted">Crie os instrumentos que poderão ser adicionados aos pacientes.</p>}
                   {instrumentTemplates.filter(t => !t.archived).map(t => <div className="instrument-entry" key={t.id}>
