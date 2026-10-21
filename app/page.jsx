@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { configured, supabase } from "../lib/supabase";
 import { useAutosave } from "../lib/useAutosave";
 import QuestionAnswerInput from "../components/QuestionAnswerInput";
+import { InstrumentTable, TableEditor } from "../components/InstrumentTables";
+import { createTable, instantiateTables } from "../lib/instrumentTables.mjs";
 
 const EMPTY_ANAMNESE = {
   motivo: "",
@@ -123,8 +125,14 @@ function instrumentPayload(instrument) {
     name: instrument.name || "",
     category: instrument.category || "",
     status: instrument.status || "Pendente",
-    scores: instrument.scores || []
+    notes: instrument.notes || "",
+    session_id: instrument.session_id || null,
+    tables: instrument.tables || []
   };
+}
+
+function templatePayload(template) {
+  return { name: template.name || "", category: template.category || "", tables: template.tables || [] };
 }
 
 function AnimatedSelect({ label, value, onChange, options }) {
@@ -190,6 +198,9 @@ export default function Home() {
   const [sessionFieldsLoading, setSessionFieldsLoading] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState({});
   const [instruments, setInstruments] = useState([]);
+  const [instrumentTemplates, setInstrumentTemplates] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [tab, setTab] = useState("anamnese");
   const [menuOpen, setMenuOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -334,6 +345,23 @@ export default function Home() {
       setSessionFields(data || []);
     }
     void loadSessionFields();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    setSelectedTemplateId("");
+    if (!user?.id || !supabase) { setInstrumentTemplates([]); return; }
+    let cancelled = false;
+    setTemplatesLoading(true);
+    async function loadTemplates() {
+      const { data, error } = await supabase.from("psico_instrument_templates").select("*").order("created_at");
+      if (cancelled) return;
+      setTemplatesLoading(false);
+      if (error) { setNotice(error.message); return; }
+      for (const template of data || []) autosave.register("instrument_template:" + template.id, templatePayload(template));
+      setInstrumentTemplates(data || []);
+    }
+    void loadTemplates();
     return () => { cancelled = true; };
   }, [user?.id]);
 
@@ -669,6 +697,10 @@ export default function Home() {
   }
 
   async function deleteSession(id) {
+    if (instruments.some(i => i.session_id === id)) {
+      setNotice("Esta sessão possui instrumentos vinculados. Altere a sessão desses instrumentos antes de excluir.");
+      return;
+    }
     if (!window.confirm("Excluir esta sessão?")) return;
     if (!await autosave.flushAll()) {
       setNotice("Não foi possível salvar as alterações pendentes.");
@@ -683,11 +715,42 @@ export default function Home() {
     }
   }
 
-  async function addInstrument() {
+  async function addInstrumentTemplate() {
     setBusy(true);
+    const { data, error } = await supabase.from("psico_instrument_templates").insert({ name: "Novo instrumento" }).select().single();
+    if (error) setNotice(error.message);
+    else {
+      autosave.register("instrument_template:" + data.id, templatePayload(data));
+      setInstrumentTemplates(prev => [...prev, data]);
+    }
+    setBusy(false);
+  }
+
+  function changeTemplate(id, patch) {
+    const next = instrumentTemplates.map(t => t.id === id ? { ...t, ...patch } : t);
+    setInstrumentTemplates(next);
+    autosave.track("instrument_template:" + id, templatePayload(next.find(t => t.id === id)));
+  }
+
+  async function archiveTemplate(id) {
+    if (!window.confirm("Remover este modelo? Os instrumentos já aplicados serão preservados.")) return;
+    if (!await autosave.flushAll()) return;
+    const { error } = await supabase.from("psico_instrument_templates").update({ archived: true }).eq("id", id);
+    if (error) setNotice(error.message);
+    else {
+      setInstrumentTemplates(prev => prev.map(t => t.id === id ? { ...t, archived: true } : t));
+      if (selectedTemplateId === id) setSelectedTemplateId("");
+    }
+  }
+
+  async function addInstrument() {
+    const template = instrumentTemplates.find(t => t.id === selectedTemplateId && !t.archived);
+    if (!template || !sessions.length || busy) return;
+    setBusy(true);
+    if (!await autosave.flushAll()) { setBusy(false); return; }
     const { data, error } = await supabase.from("psico_instruments").insert({
-      patient_id: selectedId, name: "Novo instrumento", status: "Pendente",
-      scores: [{ label: "Resultado", value: "" }]
+      patient_id: selectedId, template_id: template.id, name: template.name, category: template.category,
+      status: "Pendente", notes: "", tables: instantiateTables(template.tables || [])
     }).select().single();
     if (error) setNotice(error.message);
     else {
@@ -706,24 +769,6 @@ export default function Home() {
 
   function changeInstrument(id, field, value) {
     updateInstrument(id, i => ({ ...i, [field]: value }));
-  }
-
-  function changeScore(id, position, field, value) {
-    updateInstrument(id, i => ({
-      ...i,
-      scores: (i.scores || []).map((score, index) =>
-        index === position ? { ...score, [field]: value } : score)
-    }));
-  }
-
-  function addScore(id) {
-    updateInstrument(id, i => ({ ...i, scores: [...(i.scores || []), { label: "", value: "" }] }));
-  }
-
-  function removeScore(id, position) {
-    updateInstrument(id, i => ({
-      ...i, scores: (i.scores || []).filter((_, index) => index !== position)
-    }));
   }
 
   async function deleteInstrument(id) {
@@ -1008,8 +1053,21 @@ export default function Home() {
                 </div>
               </section>
               <section className="card">
-                <div className="cardhead"><h2>Configurar Instrumentos</h2></div>
-                <div className="cardbody settings-empty" />
+                <div className="cardhead"><h2>Configurar Instrumentos</h2><button className="btn soft" disabled={busy || templatesLoading} onClick={addInstrumentTemplate}>+ Criar instrumento</button></div>
+                <div className="cardbody instrument-list">
+                  <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
+                  {templatesLoading && <p className="muted">Carregando instrumentos…</p>}
+                  {!templatesLoading && !instrumentTemplates.some(t => !t.archived) && <p className="muted">Crie os instrumentos que poderão ser adicionados aos pacientes.</p>}
+                  {instrumentTemplates.filter(t => !t.archived).map(t => <div className="instrument-entry" key={t.id}>
+                    <InputField label="Nome do instrumento" value={t.name} onChange={name => changeTemplate(t.id, { name })} />
+                    <InputField label="Área avaliada" value={t.category} onChange={category => changeTemplate(t.id, { category })} />
+                    {(t.tables || []).map(table => <TableEditor key={table.id} table={table}
+                      onChange={next => changeTemplate(t.id, { tables: t.tables.map(item => item.id === table.id ? next : item) })}
+                      onRemove={() => { if (window.confirm("Remover esta tabela do modelo?")) changeTemplate(t.id, { tables: t.tables.filter(item => item.id !== table.id) }); }} />)}
+                    <button className="btn soft" onClick={() => changeTemplate(t.id, { tables: [...(t.tables || []), createTable()] })}>+ Adicionar tabela</button>
+                    <button className="text-btn" onClick={() => void archiveTemplate(t.id)}>Remover instrumento</button>
+                  </div>)}
+                </div>
               </section>
             </div>
           </div> : !form ? <div className="empty-state">
@@ -1129,22 +1187,30 @@ export default function Home() {
             </section>}
 
             {tab === "instrumentos" && <section className="card">
-              <div className="cardhead"><h2>Instrumentos</h2><button className="btn soft" disabled={busy} onClick={addInstrument}>+ Adicionar</button></div>
+              <div className="cardhead"><h2>Instrumentos</h2></div>
               <div className="cardbody instrument-list">
+                <div className="instrument-add">
+                  <label className="field"><span>Instrumento configurado</span><select aria-label="Instrumento configurado" value={selectedTemplateId} disabled={templatesLoading || busy} onChange={e => setSelectedTemplateId(e.target.value)}>
+                    <option value="">Selecione um instrumento</option>
+                    {instrumentTemplates.filter(t => !t.archived).map(t => <option key={t.id} value={t.id}>{t.name || "Instrumento sem nome"}</option>)}
+                  </select></label>
+                  <button className="btn soft" disabled={busy || templatesLoading || !selectedTemplateId || !sessions.length} onClick={addInstrument}>+ Adicionar</button>
+                </div>
+                {!templatesLoading && !instrumentTemplates.some(t => !t.archived) && <p className="muted">Cadastre instrumentos em <button className="text-btn" onClick={() => openTab("configuracoes")}>Configurações → Configurar Instrumentos</button>.</p>}
+                {!sessions.length && <p className="muted">Crie uma sessão antes de adicionar um instrumento.</p>}
                 {!instruments.length && <p className="muted">Nenhum instrumento registrado.</p>}
                 {instruments.map(i => <div className="instrument-entry" key={i.id}>
                   <div className="instrument-head">
-                    <InputField label="Instrumento" value={i.name} onChange={v => changeInstrument(i.id, "name", v)} />
+                    <div><h3>{i.name}</h3>{i.category && <p className="muted">{i.category}</p>}</div>
                     <AnimatedSelect label="Status" value={i.status} options={["Pendente", "Em andamento", "Concluído"]} onChange={v => changeInstrument(i.id, "status", v)} />
                   </div>
-                  <InputField label="Área avaliada" value={i.category} onChange={v => changeInstrument(i.id, "category", v)} />
-                  <div className="score-heading">Resultados</div>
-                  {(i.scores || []).map((score, position) => <div className="score-edit" key={position}>
-                    <input aria-label="Medida" placeholder="Medida" value={score.label || ""} onChange={e => changeScore(i.id, position, "label", e.target.value)} />
-                    <input aria-label="Valor" placeholder="Valor" value={score.value || ""} onChange={e => changeScore(i.id, position, "value", e.target.value)} />
-                    <button className="mini-delete" onClick={() => removeScore(i.id, position)} aria-label="Remover resultado">×</button>
-                  </div>)}
-                  <button className="text-btn" onClick={() => addScore(i.id)}>+ Resultado</button>
+                  <label className="field"><span>Sessão</span><select aria-label="Sessão" value={i.session_id || ""} onChange={e => changeInstrument(i.id, "session_id", e.target.value)}>
+                    <option value="" disabled>Selecione uma sessão</option>
+                    {sessions.map(s => <option key={s.id} value={s.id}>{s.title || "Sessão"} — {formatDate(s.occurred_on)}</option>)}
+                  </select></label>
+                  {(i.tables || []).map(table => <InstrumentTable key={table.id} table={table}
+                    onChange={next => changeInstrument(i.id, "tables", i.tables.map(item => item.id === table.id ? next : item))} />)}
+                  <label className="question"><span>Observações</span><textarea aria-label="Observações" value={i.notes || ""} onChange={e => changeInstrument(i.id, "notes", e.target.value)} /></label>
                   <div className="card-actions"><button className="btn danger" onClick={() => void deleteInstrument(i.id)}>Excluir</button></div>
                 </div>)}
               </div>
@@ -1182,7 +1248,12 @@ export default function Home() {
                 <h2>{selectedAnamneseTemplate ? "2" : "3"}. Observações durante a avaliação</h2>
                 {sessions.length ? sessions.map(s => <div key={s.id}><h3>{formatDate(s.occurred_on)}{s.title ? " — " + s.title : ""}</h3><p>{s.notes || "Sem observações."}</p></div>) : <p>Nenhuma sessão registrada.</p>}
                 <h2>{selectedAnamneseTemplate ? "3" : "4"}. Instrumentos e resultados</h2>
-                {instruments.length ? instruments.map(i => <div key={i.id}><h3>{i.name} — {i.status}</h3><p>{[i.category, ...(i.scores || []).filter(s => s.label || s.value).map(s => (s.label || "Resultado") + ": " + (s.value || "—"))].filter(Boolean).join(" · ")}</p></div>) : <p>Nenhum instrumento registrado.</p>}
+                {instruments.length ? instruments.map(i => <div key={i.id}><h3>{i.name} — {i.status}</h3>
+                  {i.category && <p>{i.category}</p>}
+                  {i.session_id && <p>{sessions.find(s => s.id === i.session_id)?.title || "Sessão"} — {formatDate(sessions.find(s => s.id === i.session_id)?.occurred_on)}</p>}
+                  {(i.tables || []).map(table => <InstrumentTable key={table.id} table={table} readOnly />)}
+                  {i.notes && <p>Observações: {i.notes}</p>}
+                </div>) : <p>Nenhum instrumento registrado.</p>}
                 <h2>{selectedAnamneseTemplate ? "4" : "5"}. Conclusão</h2>
                 <p>{form.conclusion || "Pendente de elaboração e revisão pela profissional responsável."}</p>
               </article>
