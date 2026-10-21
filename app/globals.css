@@ -430,3 +430,29 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 @media(max-width:480px){.public-form-page{padding:16px 10px}.public-form-card{padding:20px}.instrument-waiting{padding:12px}.form-share>.field,.instrument-receive-row>.field{min-width:100%;width:100%}}
 
 .instrument-fields{border:0;padding:0;margin:0;min-width:0;display:flex;flex-direction:column;gap:10px}
+
+.ai-report{display:flex;flex-direction:column;gap:20px;min-width:0}
+.ai-report .paper{width:min(100%,900px);align-self:center;box-sizing:border-box;font-family:"Times New Roman",serif;font-size:16px;line-height:1.6}
+.ai-report .paper h1,.ai-report .paper h2,.ai-report .paper h3{font-family:inherit;font-weight:700;line-height:1.4;break-after:avoid}
+.ai-report .paper h1{font-size:23px;text-align:center;margin-bottom:30px}
+.ai-report .paper h2{font-size:20px;margin-top:28px;text-transform:none;letter-spacing:normal}
+.ai-report .paper h3{font-size:17px;margin-top:22px}
+.ai-report .paper p{font-family:inherit;font-size:inherit;line-height:1.5;white-space:pre-wrap;text-align:justify;overflow-wrap:anywhere}
+.ai-report .paper .report-meta-line{text-align:left;margin:4px 0}
+.ai-report .paper .report-signature{text-align:center;margin-top:24px}
+.ai-report .cardhead{flex-wrap:wrap;gap:16px}
+.ai-report .cardhead .muted{margin-bottom:0}
+.report-review-note,.report-warning,.report-error{border-radius:8px;padding:12px 15px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.report-review-note{background:var(--brand3);color:var(--brand)}
+.report-warning{background:#fff8e8;color:#72551b}
+.report-error{background:#fff0f0;color:#9d3333}
+.report-progress{display:flex;align-items:start;gap:14px;background:#f5f8f6;border:1px solid var(--line);border-radius:10px;padding:16px;margin:15px 0;font-size:13px}
+.report-progress p{font-size:12px;line-height:1.7;margin-bottom:0}
+.report-spinner{height:18px;width:18px;flex:none;border:2px solid #c9ddd2;border-top-color:var(--brand);border-radius:50%;animation:report-spin 1s linear infinite}
+.report-validation{font-size:12px;line-height:1.7;margin:14px 0;border:1px solid var(--line);padding:12px;border-radius:8px}
+.report-validation summary,.report-clinician-notes>summary{cursor:pointer;font-weight:600}
+.report-clinician-notes>summary{padding:17px;font-size:13px}
+@keyframes report-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.report-spinner{animation:none}}
+@media(max-width:600px){.ai-report .paper{padding:23px 18px}.ai-report .cardhead>.btn{width:100%}.ai-report .paper h1{font-size:21px}}
+@media print{.ai-report{display:block}.ai-report .report-tools{display:none!important}.ai-report .paper{width:100%;max-width:none;padding:0;border:0;box-shadow:none;font-size:12pt}.ai-report .paper h1{font-size:14pt}.ai-report .paper h2{font-size:14pt}.ai-report .paper h3{font-size:12pt}.ai-report .paper p{orphans:3;widows:3}}

@@ -8,6 +8,9 @@ import { InstrumentTable, TableEditor } from "../components/InstrumentTables";
 import { createTable, instantiateTables } from "../lib/instrumentTables.mjs";
 import InstrumentFormEditor from "../components/InstrumentFormEditor";
 import InstrumentDelivery from "../components/InstrumentDelivery";
+import ReportPanel from "../components/ReportPanel";
+import ReportSettings from "../components/ReportSettings";
+import { DEFAULT_REPORT_SETTINGS } from "../supabase/functions/_shared/reportCore.mjs";
 import { deliveryDate, instrumentForm, waitingInSession } from "../lib/instrumentDelivery.mjs";
 
 const EMPTY_ANAMNESE = {
@@ -115,10 +118,6 @@ function anamneseTemplatePayload(template) {
   };
 }
 
-function templateQuestionValue(value) {
-  return Array.isArray(value) ? value.join(", ") : String(value || "—");
-}
-
 function hasLegacyAnamnese(answers) {
   return AREAS.some(([key]) => Boolean(answers?.[key]?.trim()));
 }
@@ -201,6 +200,7 @@ export default function Home() {
   const [sessionFieldsLoading, setSessionFieldsLoading] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState({});
   const [instruments, setInstruments] = useState([]);
+  const [reportSettings, setReportSettings] = useState(null);
   const [instrumentTemplates, setInstrumentTemplates] = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -350,6 +350,27 @@ export default function Home() {
       setSessionFields(data || []);
     }
     void loadSessionFields();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    setReportSettings(null);
+    if (!user?.id || !supabase) return;
+    let cancelled = false;
+    async function loadReportSettings() {
+      let { data, error } = await supabase.from("psico_report_settings").select("settings").eq("id", user.id).maybeSingle();
+      if (!error && !data) {
+        const created = await supabase.from("psico_report_settings").upsert({ id: user.id, settings: DEFAULT_REPORT_SETTINGS }, { onConflict: "id", ignoreDuplicates: true }).select("settings").maybeSingle();
+        error = created.error; data = created.data;
+        if (!error && !data) ({data,error}=await supabase.from("psico_report_settings").select("settings").eq("id",user.id).single());
+      }
+      if (cancelled) return;
+      if (error) { setNotice("Não foi possível carregar a configuração de laudos: " + error.message); return; }
+      const settings = { ...DEFAULT_REPORT_SETTINGS, ...(data?.settings || {}) };
+      autosave.register("report_settings:" + user.id, {settings});
+      setReportSettings(settings);
+    }
+    void loadReportSettings();
     return () => { cancelled = true; };
   }, [user?.id]);
 
@@ -907,8 +928,6 @@ export default function Home() {
   const selectedAnswers = anamnese.template_answers?.[form?.anamnese_template_id] || {};
   const complete = instruments.filter(i => i.status === "Concluído").length;
   const missing = instruments.filter(i => i.status !== "Concluído").length;
-  const latestDate = sessions.reduce((latest, session) =>
-    session.occurred_on && (!latest || session.occurred_on > latest) ? session.occurred_on : latest, null);
 
   return (
     <div className="app">
@@ -1095,6 +1114,10 @@ export default function Home() {
                   ))}
                 </div>
               </section>
+              <ReportSettings settings={reportSettings} status={saveLabel} onChange={settings => {
+                setReportSettings(settings);
+                autosave.track("report_settings:" + user.id, {settings});
+              }} />
               <section className="card">
                 <div className="cardhead"><h2>Configurar Instrumentos</h2><button className="btn soft" disabled={busy || templatesLoading} onClick={addInstrumentTemplate}>+ Criar instrumento</button></div>
                 <div className="cardbody instrument-list">
@@ -1272,59 +1295,10 @@ export default function Home() {
               </div>
             </section>}
 
-            {tab === "laudo" && <div className="report-layout">
-              <article className="paper">
-                <h1>Laudo Psicológico</h1>
-                <div className="report-meta">
-                  <div><b>Nome:</b> {form.name}</div>
-                  {form.birth_date && <div><b>Nascimento:</b> {formatDate(form.birth_date)}</div>}
-                  {form.grade && <div><b>Escolaridade:</b> {form.grade}</div>}
-                  {form.school && <div><b>Escola:</b> {form.school}</div>}
-                  {form.requester && <div><b>Solicitante:</b> {form.requester}</div>}
-                  {latestDate && <div><b>Última sessão:</b> {formatDate(latestDate)}</div>}
-                </div>
-                {selectedAnamneseTemplate ? <>
-                  <h2>1. Anamnese — {selectedAnamneseTemplate.name}</h2>
-                  {(selectedAnamneseTemplate.questions || []).map(question => (
-                    <div key={question.id}>
-                      <h3>{question.label || "Pergunta"}</h3>
-                      <p>{templateQuestionValue(selectedAnswers[question.id])}</p>
-                    </div>
-                  ))}
-                  {!selectedAnamneseTemplate.questions?.length &&
-                    <p>Nenhuma pergunta configurada.</p>}
-                </> : <>
-                  <h2>1. Descrição da demanda</h2>
-                  <p>{anamnese.motivo || "Não preenchido."}</p>
-                  <h2>2. Anamnese</h2>
-                  {AREAS.filter(([key]) => key !== "motivo").map(([key, label]) => (
-                    anamnese[key] ? <div key={key}><h3>{label}</h3><p>{anamnese[key]}</p></div> : null
-                  ))}
-                </>}
-                <h2>{selectedAnamneseTemplate ? "2" : "3"}. Observações durante a avaliação</h2>
-                {sessions.length ? sessions.map(s => <div key={s.id}><h3>{formatDate(s.occurred_on)}{s.title ? " — " + s.title : ""}</h3><p>{s.notes || "Sem observações."}</p></div>) : <p>Nenhuma sessão registrada.</p>}
-                <h2>{selectedAnamneseTemplate ? "3" : "4"}. Instrumentos e resultados</h2>
-                {instruments.length ? instruments.map(i => <div key={i.id}><h3>{i.name} — {i.status}</h3>
-                  {i.category && <p>{i.category}</p>}
-                  {i.session_id && <p>{sessions.find(s => s.id === i.session_id)?.title || "Sessão"} — {formatDate(sessions.find(s => s.id === i.session_id)?.occurred_on)}</p>}
-                  {(i.tables || []).map(table => <InstrumentTable key={table.id} table={table} readOnly />)}
-                  {i.notes && <p>Observações: {i.notes}</p>}
-                </div>) : <p>Nenhum instrumento registrado.</p>}
-                <h2>{selectedAnamneseTemplate ? "4" : "5"}. Conclusão</h2>
-                <p>{form.conclusion || "Pendente de elaboração e revisão pela profissional responsável."}</p>
-              </article>
-              <aside className="report-tools">
-                <div className="card">
-                  <div className="cardhead"><h2>Conclusão</h2></div>
-                  <div className="cardbody">
-                    <textarea value={form.conclusion || ""} onChange={e => setField("conclusion", e.target.value)} placeholder="Redigir conclusão..." />
-                    <p className="muted">A conclusão é salva automaticamente.</p>
-                    <button className="btn full-btn" onClick={() => window.print()}>Imprimir / PDF</button>
-                  </div>
-                </div>
-                <p className="report-note">Revisar antes de emitir.</p>
-              </aside>
-            </div>}
+            {tab === "laudo" && <ReportPanel key={selectedId} patientId={selectedId}
+              beforeGenerate={() => autosave.flushAll()} conclusion={form.conclusion}
+              onConclusionChange={value => setField("conclusion", value)} />}
+
           </>}
         </div>
       </main>
