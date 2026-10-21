@@ -88,7 +88,7 @@ function sessionFieldPayload(field) {
   };
 }
 
-function SessionCustomFields({ fields, values, onChange }) {
+function SessionCustomFields({ sessionId, fields, values, onChange }) {
   if (!fields.length) return null;
   return <div className="session-custom-fields">
     {fields.map(field => {
@@ -105,7 +105,7 @@ function SessionCustomFields({ fields, values, onChange }) {
         ) : field.field_type === "single" ? (
           <div className="custom-choices">
             {choices.map((option, index) => <label className="custom-choice" key={index}>
-              <input type="radio" name={"session-" + field.id} checked={value === option}
+              <input type="radio" name={"session-" + sessionId + "-" + field.id} checked={value === option}
                 disabled={field.archived} onChange={() => onChange(field.id, option)} />
               <span>{option}</span>
             </label>)}
@@ -917,7 +917,7 @@ export default function Home() {
                       <InputField label="Duração (min)" type="number" value={String(s.duration_minutes)} onChange={v => changeSession(s.id, "duration_minutes", v)} />
                     </div>
                     <SessionCustomFields
-                      fields={sessionFields.filter(field => !field.archived ||
+                      sessionId={s.id} fields={sessionFields.filter(field => !field.archived ||
                         Object.prototype.hasOwnProperty.call(s.custom_fields || {}, field.id))}
                       values={s.custom_fields || {}}
                       onChange={(fieldId, value) => changeSessionCustomField(s, fieldId, value)} />
