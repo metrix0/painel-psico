@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { configured, supabase } from "../lib/supabase";
 import { useAutosave } from "../lib/useAutosave";
+import QuestionAnswerInput from "../components/QuestionAnswerInput";
 
 const EMPTY_ANAMNESE = {
   motivo: "",
@@ -65,6 +66,7 @@ function patientPayload(patient) {
     guardian: patient.guardian || "",
     requester: patient.requester || "",
     anamnese: patient.anamnese || {},
+    anamnese_template_id: patient.anamnese_template_id || null,
     conclusion: patient.conclusion || ""
   };
 }
@@ -91,43 +93,29 @@ function sessionFieldPayload(field) {
 function SessionCustomFields({ sessionId, fields, values, onChange }) {
   if (!fields.length) return null;
   return <div className="session-custom-fields">
-    {fields.map(field => {
-      const value = values?.[field.id];
-      const choices = (field.options || []).filter(option => option.trim());
-      return <div className="session-custom-field" key={field.id}>
-        <span className="custom-field-label">{field.label || "Campo sem nome"}{field.archived ? " (arquivado)" : ""}</span>
-        {field.field_type === "textarea" ? (
-          <textarea value={typeof value === "string" ? value : ""} disabled={field.archived}
-            onChange={event => onChange(field.id, event.target.value)} />
-        ) : field.field_type === "text" ? (
-          <input value={typeof value === "string" ? value : ""} disabled={field.archived}
-            onChange={event => onChange(field.id, event.target.value)} />
-        ) : field.field_type === "single" ? (
-          <div className="custom-choices">
-            {choices.map((option, index) => <label className="custom-choice" key={index}>
-              <input type="radio" name={"session-" + sessionId + "-" + field.id} checked={value === option}
-                disabled={field.archived} onChange={() => onChange(field.id, option)} />
-              <span>{option}</span>
-            </label>)}
-          </div>
-        ) : (
-          <div className="custom-choices">
-            {choices.map((option, index) => <label className="custom-choice" key={index}>
-              <input type="checkbox" checked={Array.isArray(value) && value.includes(option)}
-                disabled={field.archived}
-                onChange={event => {
-                  const current = Array.isArray(value) ? value : [];
-                  onChange(field.id, event.target.checked
-                    ? [...current.filter(item => item !== option), option]
-                    : current.filter(item => item !== option));
-                }} />
-              <span>{option}</span>
-            </label>)}
-          </div>
-        )}
-      </div>;
-    })}
+    {fields.map(field => <QuestionAnswerInput
+      key={field.id}
+      field={field}
+      value={values?.[field.id]}
+      namePrefix={"session-" + sessionId}
+      onChange={value => onChange(field.id, value)}
+    />)}
   </div>;
+}
+
+function anamneseTemplatePayload(template) {
+  return {
+    name: template.name || "",
+    questions: template.questions || []
+  };
+}
+
+function templateQuestionValue(value) {
+  return Array.isArray(value) ? value.join(", ") : String(value || "—");
+}
+
+function hasLegacyAnamnese(answers) {
+  return AREAS.some(([key]) => Boolean(answers?.[key]?.trim()));
 }
 
 function instrumentPayload(instrument) {
@@ -195,6 +183,9 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [anamneseTemplates, setAnamneseTemplates] = useState([]);
+  const [anamneseTemplatesLoading, setAnamneseTemplatesLoading] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [sessionFields, setSessionFields] = useState([]);
   const [sessionFieldsLoading, setSessionFieldsLoading] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState({});
@@ -299,6 +290,30 @@ export default function Home() {
       setSelectedId(prev => rows.some(p => p.id === prev) ? prev : (recent[0]?.id || null));
     }
     load();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !supabase) {
+      setAnamneseTemplates([]);
+      setEditingTemplateId(null);
+      return;
+    }
+    let cancelled = false;
+    setAnamneseTemplatesLoading(true);
+    async function loadTemplates() {
+      const { data, error } = await supabase.from("psico_anamnese_templates")
+        .select("*").order("created_at", { ascending: true });
+      if (cancelled) return;
+      setAnamneseTemplatesLoading(false);
+      if (error) { setNotice(error.message); return; }
+      const rows = data || [];
+      rows.forEach(template => autosave.register("anamnese_template:" + template.id, anamneseTemplatePayload(template)));
+      setAnamneseTemplates(rows);
+      setEditingTemplateId(prev => rows.some(t => t.id === prev && !t.archived)
+        ? prev : (rows.find(t => !t.archived)?.id || null));
+    }
+    void loadTemplates();
     return () => { cancelled = true; };
   }, [user?.id]);
 
@@ -500,6 +515,92 @@ export default function Home() {
       setNotice("Paciente excluído.");
     }
     setBusy(false);
+  }
+
+  async function addAnamneseTemplate() {
+    if (!await autosave.flushAll()) {
+      setNotice("Há alterações pendentes que ainda não foram salvas.");
+      return;
+    }
+    setBusy(true);
+    const { data, error } = await supabase.from("psico_anamnese_templates")
+      .insert({ name: "Nova anamnese", questions: [] }).select().single();
+    if (error) setNotice(error.message);
+    else {
+      autosave.register("anamnese_template:" + data.id, anamneseTemplatePayload(data));
+      setAnamneseTemplates(prev => [...prev, data]);
+      setEditingTemplateId(data.id);
+    }
+    setBusy(false);
+  }
+
+  function editAnamneseTemplate(id, transform) {
+    const next = anamneseTemplates.map(template => template.id === id ? transform(template) : template);
+    setAnamneseTemplates(next);
+    const changed = next.find(template => template.id === id);
+    if (changed) autosave.track("anamnese_template:" + id, anamneseTemplatePayload(changed));
+  }
+
+  function addAnamneseQuestion(id) {
+    editAnamneseTemplate(id, template => ({
+      ...template,
+      questions: [...(template.questions || []), {
+        id: crypto.randomUUID(), label: "Nova pergunta", field_type: "text", options: []
+      }]
+    }));
+  }
+
+  function editAnamneseQuestion(id, questionId, patch) {
+    editAnamneseTemplate(id, template => ({
+      ...template,
+      questions: (template.questions || []).map(question => question.id === questionId
+        ? { ...question, ...patch } : question)
+    }));
+  }
+
+  function removeAnamneseQuestion(id, questionId) {
+    if (!window.confirm("Remover esta pergunta do modelo? As respostas já registradas serão preservadas.")) return;
+    editAnamneseTemplate(id, template => ({
+      ...template,
+      questions: (template.questions || []).filter(question => question.id !== questionId)
+    }));
+  }
+
+  async function archiveAnamneseTemplate(id) {
+    if (!window.confirm("Arquivar este modelo? Ele continuará acessível nos pacientes que já o utilizam.")) return;
+    if (!await autosave.flushAll()) {
+      setNotice("Não foi possível salvar as alterações pendentes.");
+      return;
+    }
+    const { error } = await supabase.from("psico_anamnese_templates")
+      .update({ archived: true }).eq("id", id);
+    if (error) { setNotice(error.message); return; }
+    setAnamneseTemplates(prev => prev.map(t => t.id === id ? { ...t, archived: true } : t));
+    setEditingTemplateId(prev => prev === id
+      ? anamneseTemplates.find(t => !t.archived && t.id !== id)?.id || null : prev);
+  }
+
+  function selectAnamneseTemplate(id) {
+    setField("anamnese_template_id", id || null);
+  }
+
+  function setAnamneseTemplateAnswer(questionId, value) {
+    const templateId = form?.anamnese_template_id;
+    if (!templateId) return;
+    const current = form.anamnese || {};
+    const allAnswers = current.template_answers || {};
+    const next = {
+      ...form,
+      anamnese: {
+        ...current,
+        template_answers: {
+          ...allAnswers,
+          [templateId]: { ...(allAnswers[templateId] || {}), [questionId]: value }
+        }
+      }
+    };
+    setForm(next);
+    autosave.track("patient:" + selectedId, patientPayload(next));
   }
 
   async function addSessionField() {
@@ -713,6 +814,9 @@ export default function Home() {
     : autosave.status === "pending" ? "Pendente"
     : autosave.status === "error" ? "Não salvo" : "Salvo";
   const anamnese = form?.anamnese || EMPTY_ANAMNESE;
+  const selectedAnamneseTemplate = anamneseTemplates.find(t => t.id === form?.anamnese_template_id);
+  const editingAnamneseTemplate = anamneseTemplates.find(t => t.id === editingTemplateId && !t.archived);
+  const selectedAnswers = anamnese.template_answers?.[form?.anamnese_template_id] || {};
   const complete = instruments.filter(i => i.status === "Concluído").length;
   const missing = instruments.filter(i => i.status !== "Concluído").length;
   const latestDate = sessions.reduce((latest, session) =>
@@ -798,8 +902,71 @@ export default function Home() {
             <div className="hero"><h1>Configurações</h1></div>
             <div className="content-stack">
               <section className="card">
-                <div className="cardhead"><h2>Configurar Anamneses</h2></div>
-                <div className="cardbody settings-empty" />
+                <div className="cardhead">
+                  <h2>Configurar Anamneses</h2>
+                  <button className="btn soft" disabled={busy || anamneseTemplatesLoading}
+                    onClick={() => void addAnamneseTemplate()}>+ Novo modelo</button>
+                </div>
+                <div className="cardbody">
+                  <p className="muted">Crie um modelo com perguntas personalizadas. Cada paciente pode utilizar um modelo diferente. Alterações salvas automaticamente.</p>
+                  {anamneseTemplatesLoading ? <p className="muted">Carregando modelos…</p>
+                    : <div className="anamnese-template-layout">
+                      <div className="anamnese-template-list" aria-label="Modelos de anamnese">
+                        {anamneseTemplates.filter(template => !template.archived).map(template => (
+                          <button type="button" key={template.id}
+                            className={"anamnese-template-item" + (editingTemplateId === template.id ? " active" : "")}
+                            aria-pressed={editingTemplateId === template.id}
+                            onClick={() => setEditingTemplateId(template.id)}>
+                            <strong>{template.name || "Modelo sem nome"}</strong>
+                            <span>{(template.questions || []).length} perguntas</span>
+                          </button>
+                        ))}
+                        {!anamneseTemplates.some(template => !template.archived) &&
+                          <span className="muted">Nenhum modelo criado.</span>}
+                      </div>
+                      {editingAnamneseTemplate && <div className="anamnese-template-editor" key={editingAnamneseTemplate.id}>
+                        <div className="anamnese-template-heading">
+                          <InputField label="Nome do modelo" value={editingAnamneseTemplate.name}
+                            onChange={value => editAnamneseTemplate(editingAnamneseTemplate.id, template =>
+                              ({ ...template, name: value }))} />
+                          <button className="text-btn" type="button"
+                            onClick={() => void archiveAnamneseTemplate(editingAnamneseTemplate.id)}>Arquivar modelo</button>
+                        </div>
+                        {(editingAnamneseTemplate.questions || []).map((question, index) => (
+                          <div key={question.id} className="session-field-editor anamnese-question-editor">
+                            <div className="session-field-config-row">
+                              <InputField label={"Pergunta " + (index + 1)} value={question.label}
+                                onChange={value => editAnamneseQuestion(editingAnamneseTemplate.id, question.id,
+                                  { label: value })} />
+                              <label className="field"><span>Tipo de resposta</span>
+                                <select value={question.field_type}
+                                  onChange={event => editAnamneseQuestion(editingAnamneseTemplate.id, question.id,
+                                    { field_type: event.target.value })}>
+                                  <option value="text">Texto curto</option>
+                                  <option value="textarea">Texto longo</option>
+                                  <option value="single">Escolha única (círculos)</option>
+                                  <option value="multiple">Múltipla escolha</option>
+                                </select>
+                              </label>
+                            </div>
+                            {(question.field_type === "single" || question.field_type === "multiple") &&
+                              <label className="field"><span>Opções (uma por linha)</span>
+                                <textarea rows={4} value={(question.options || []).join("\n")}
+                                  placeholder={"Opção 1\nOpção 2"}
+                                  onChange={event => editAnamneseQuestion(editingAnamneseTemplate.id, question.id,
+                                    { options: event.target.value.split("\n") })} />
+                              </label>}
+                            <button type="button" className="text-btn"
+                              onClick={() => removeAnamneseQuestion(editingAnamneseTemplate.id, question.id)}>
+                              Remover pergunta
+                            </button>
+                          </div>
+                        ))}
+                        <button type="button" className="btn soft"
+                          onClick={() => addAnamneseQuestion(editingAnamneseTemplate.id)}>+ Adicionar pergunta</button>
+                      </div>}
+                    </div>}
+                </div>
               </section>
               <section className="card">
                 <div className="cardhead">
@@ -887,10 +1054,41 @@ export default function Home() {
               <section className="card">
                 <div className="cardhead"><h2>Anamnese</h2></div>
                 <div className="cardbody">
-                  {AREAS.map(([key, label]) => <label className="question" key={key}>
-                    <span>{label}</span>
-                    <textarea value={anamnese[key] || ""} onChange={e => setAnamnese(key, e.target.value)} />
-                  </label>)}
+                  <label className="field anamnese-type-field"><span>Tipo de anamnese</span>
+                    <select value={form.anamnese_template_id || ""}
+                      onChange={event => selectAnamneseTemplate(event.target.value)}>
+                      <option value="">Selecionar modelo</option>
+                      {anamneseTemplates.filter(template => !template.archived ||
+                        template.id === form.anamnese_template_id).map(template => (
+                        <option key={template.id} value={template.id}>
+                          {template.name || "Modelo sem nome"}{template.archived ? " (arquivado)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {form.anamnese_template_id && selectedAnamneseTemplate ? (
+                    <div className="session-custom-fields anamnese-answers">
+                      {(selectedAnamneseTemplate.questions || []).map(question =>
+                        <QuestionAnswerInput key={question.id} field={question}
+                          namePrefix={"anamnese-" + selectedAnamneseTemplate.id}
+                          value={selectedAnswers[question.id]}
+                          onChange={value => setAnamneseTemplateAnswer(question.id, value)} />)}
+                      {!selectedAnamneseTemplate.questions?.length &&
+                        <p className="muted">Este modelo ainda não tem perguntas. Configure-o em Configurações.</p>}
+                    </div>
+                  ) : form.anamnese_template_id ? (
+                    <p className="muted">Modelo não encontrado. As respostas existentes foram preservadas.</p>
+                  ) : hasLegacyAnamnese(anamnese) ? (
+                    <div className="legacy-anamnese">
+                      <p className="muted">Respostas anteriores (sem modelo). Escolha um modelo acima quando desejar.</p>
+                      {AREAS.map(([key, label]) => <label className="question" key={key}>
+                        <span>{label}</span>
+                        <textarea value={anamnese[key] || ""} onChange={e => setAnamnese(key, e.target.value)} />
+                      </label>)}
+                    </div>
+                  ) : (
+                    <p className="muted">Selecione o modelo de anamnese deste paciente. Crie modelos em Configurações → Configurar Anamneses.</p>
+                  )}
                   <div className="card-actions">
                     <button className="btn danger" disabled={busy} onClick={deletePatient}>Excluir paciente</button>
                   </div>
@@ -963,17 +1161,29 @@ export default function Home() {
                   {form.requester && <div><b>Solicitante:</b> {form.requester}</div>}
                   {latestDate && <div><b>Última sessão:</b> {formatDate(latestDate)}</div>}
                 </div>
-                <h2>1. Descrição da demanda</h2>
-                <p>{anamnese.motivo || "Não preenchido."}</p>
-                <h2>2. Anamnese</h2>
-                {AREAS.filter(([key]) => key !== "motivo").map(([key, label]) => (
-                  anamnese[key] ? <div key={key}><h3>{label}</h3><p>{anamnese[key]}</p></div> : null
-                ))}
-                <h2>3. Observações durante a avaliação</h2>
+                {selectedAnamneseTemplate ? <>
+                  <h2>1. Anamnese — {selectedAnamneseTemplate.name}</h2>
+                  {(selectedAnamneseTemplate.questions || []).map(question => (
+                    <div key={question.id}>
+                      <h3>{question.label || "Pergunta"}</h3>
+                      <p>{templateQuestionValue(selectedAnswers[question.id])}</p>
+                    </div>
+                  ))}
+                  {!selectedAnamneseTemplate.questions?.length &&
+                    <p>Nenhuma pergunta configurada.</p>}
+                </> : <>
+                  <h2>1. Descrição da demanda</h2>
+                  <p>{anamnese.motivo || "Não preenchido."}</p>
+                  <h2>2. Anamnese</h2>
+                  {AREAS.filter(([key]) => key !== "motivo").map(([key, label]) => (
+                    anamnese[key] ? <div key={key}><h3>{label}</h3><p>{anamnese[key]}</p></div> : null
+                  ))}
+                </>}
+                <h2>{selectedAnamneseTemplate ? "2" : "3"}. Observações durante a avaliação</h2>
                 {sessions.length ? sessions.map(s => <div key={s.id}><h3>{formatDate(s.occurred_on)}{s.title ? " — " + s.title : ""}</h3><p>{s.notes || "Sem observações."}</p></div>) : <p>Nenhuma sessão registrada.</p>}
-                <h2>4. Instrumentos e resultados</h2>
+                <h2>{selectedAnamneseTemplate ? "3" : "4"}. Instrumentos e resultados</h2>
                 {instruments.length ? instruments.map(i => <div key={i.id}><h3>{i.name} — {i.status}</h3><p>{[i.category, ...(i.scores || []).filter(s => s.label || s.value).map(s => (s.label || "Resultado") + ": " + (s.value || "—"))].filter(Boolean).join(" · ")}</p></div>) : <p>Nenhum instrumento registrado.</p>}
-                <h2>5. Conclusão</h2>
+                <h2>{selectedAnamneseTemplate ? "4" : "5"}. Conclusão</h2>
                 <p>{form.conclusion || "Pendente de elaboração e revisão pela profissional responsável."}</p>
               </article>
               <aside className="report-tools">
