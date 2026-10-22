@@ -582,20 +582,29 @@ export default function Home() {
 
   async function selectPatient(id) {
     if (switchingPatient.current) return;
-    if (id !== selectedId) {
-      switchingPatient.current = true;
-      try {
-        if (!await autosave.flushAll()) {
-          setNotice("Há alterações não salvas. Verifique a conexão ou os campos.");
-          return;
-        }
-        setSelectedId(id);
-      } finally {
-        switchingPatient.current = false;
+    switchingPatient.current = true;
+    try {
+      if (id !== selectedId && !await autosave.flushAll()) {
+        setNotice("Há alterações não salvas. Verifique a conexão ou os campos.");
+        return;
       }
+      const { count, error } = await supabase.from("psico_sessions")
+        .select("id", { count: "exact", head: true }).eq("patient_id", id);
+      if (error) setNotice("Não foi possível verificar as sessões: " + error.message);
+      if (id !== selectedId) {
+        setForm(null);
+        setSessions([]);
+        setInstruments([]);
+        setExpandedSessions({});
+        setSelectedId(id);
+      }
+      setSearch("");
+      setTab((count ?? (id === selectedId ? sessions.length : 0)) > 1 ? "sessoes" : "anamnese");
+      setMenuOpen(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      switchingPatient.current = false;
     }
-    setSearch("");
-    openTab("anamnese");
   }
 
   async function signIn(e) {
@@ -1391,12 +1400,19 @@ export default function Home() {
               <div className="cardbody">
                 {!sessions.length && <p className="muted">Nenhuma sessão registrada.</p>}
                 {sessions.map(s => <div className="session-entry" key={s.id}>
-                  <button type="button" className="session-summary" aria-expanded={!!expandedSessions[s.id]}
+                  <button type="button" className={"session-summary" + (expandedSessions[s.id] ? " is-open" : "")}
+                    aria-expanded={!!expandedSessions[s.id]} aria-controls={"session-details-" + s.id}
                     onClick={() => setExpandedSessions(prev => ({ ...prev, [s.id]: !prev[s.id] }))}>
-                    <strong>{s.title || "Sessão"}</strong>
-                    <span>{formatDate(s.occurred_on)}</span>
-                    <span>{s.duration_minutes} min</span>
-                    <span className={"session-chevron" + (expandedSessions[s.id] ? " expanded" : "")} aria-hidden="true">⌄</span>
+                    <span className="session-summary-main">
+                      <strong>{s.title || "Sessão"}</strong>
+                      <span className="session-summary-meta">{formatDate(s.occurred_on)} · {s.duration_minutes} min</span>
+                    </span>
+                    <span className="session-summary-toggle" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </span>
                   </button>
                   {instruments.some(i => i.sent_session_id === s.id || i.received_session_id === s.id) && <div className="session-instrument-labels">
                     {instruments.filter(i => i.sent_session_id === s.id).map(i => <span className="instrument-badge" key={i.id + "-sent"}>{i.name} Enviado</span>)}
@@ -1406,17 +1422,10 @@ export default function Home() {
                     <span>Aguardando conclusão de <strong>{i.name}</strong> · enviado em {deliveryDate(i.sent_at)}</span>
                     <button className="btn" disabled={busy} onClick={() => void instrumentAction(i.id, "receive", s.id)}>Marcar como recebido</button>
                   </div>)}
-                  {expandedSessions[s.id] && <div className="session-details">
+                  {expandedSessions[s.id] && <div id={"session-details-" + s.id} className="session-details">
                     <div className="session-fields">
                       <InputField label="Título" value={s.title} onChange={v => changeSession(s.id, "title", v)} />
                       <InputField label="Data" type="date" value={s.occurred_on} onChange={v => changeSession(s.id, "occurred_on", v)} />
-                      <label className="field"><span>Comparecimento</span>
-                        <select aria-label="Comparecimento" value={s.attendance_status || "realizada"}
-                          onChange={e => changeSession(s.id, "attendance_status", e.target.value)}>
-                          <option value="realizada">Realizada</option>
-                          <option value="faltou">Faltou</option>
-                        </select>
-                      </label>
                       <InputField label="Duração (min)" type="number" value={String(s.duration_minutes)} onChange={v => changeSession(s.id, "duration_minutes", v)} />
                     </div>
                     <SessionCustomFields
