@@ -10,14 +10,14 @@ Data do backfill: 21/10/2026 (BRT). Definitions are stored in the dedicated Supa
 
 ## Seeded definitions (per account)
 - Anamnese: exactly two active models, **Padrão** (empty) and **TEA** (183 questions; sections preserved). A previous test template is archived, not deleted.
-- Instruments: **38 active models**; **21** have result tables (**28** tables total). Fixed row labels and editable result cells reflect verified report table structures, not individual patients' scores.
+- Instruments: **38 active models**; **26** have result tables (**37** tables total). Fixed row labels and editable result cells reflect verified report table structures, not individual patients' scores.
 - Externally answerable questionnaires: **SCARED (41)**, **SNAP-IV Familiar (18)**, **M-CHAT-R (20)**, **EFA (50)** — **129** question definitions.
 - Sessões: three configurable fields: checklist of applied/pending/corrected/in-report status; worked-on instruments; next instruments/pending tasks.
 
 ## Incomplete / requiring source confirmation
 - The supplied Vineland-3 photo sequence does not establish a complete, verified questionnaire for either respondent type. The result tables are present, but patient-facing forms are **not** enabled.
 - CARS scoring sheets are for professional use; the result table is present, but no patient-facing form is enabled.
-- **17 instruments** without confirmed laudo result-table layout retain empty tables rather than a fabricated format. Examples: ADOS, ADI-R, IDADI, HTP, RAVEN, TISD, TCLPP, SSRS, ASRS-18, ETDAH-AD, PROTEA-R and more.
+- **12 instruments** without confirmed laudo result-table layout retain empty tables rather than a fabricated format. Examples: ADOS, ADI-R, IDADI, HTP, TCLPP, ASRS-18, PROTEA-R and other tests without verified quantitative tables.
 - Source table geometry/headers/rows were replicated in editable table definitions where verified. Exact pixel-for-pixel Word/PDF formatting and automated norm conversions are **not** asserted.
 - Human review of questionnaire transcription, scoring, and copyright/licensing requirements is necessary before clinical release or sending protected tests to patients.
 
@@ -28,3 +28,5 @@ This file records status and provenance only; the sensitive question bodies live
 - Both registered account scopes have exactly 2 active anamnesis templates, 38 active instrument definitions, 4 complete questionnaires, and 3 active session checklist fields.
 - Vercel status for the section-grouping update: deployment completed successfully.
 - Verified result-table formats from additional Drive laudos: TAVIS-4 (reaction time, correct responses and omission/action errors), TISD (subtests and total) and TDE II (additional efficiency table).
+
+- Additional layout sources: Raven-CPM result grid, three respondent-specific SSRS layouts (including behavior and academic subscales), and ETDAH-AD factor table from Drive laudos. These contain blank editable results only, never patient scores.
