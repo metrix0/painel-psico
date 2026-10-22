@@ -502,3 +502,59 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 @media(prefers-reduced-motion:reduce){.report-spinner{animation:none}}
 @media(max-width:600px){.ai-report .paper{padding:23px 18px}.ai-report .cardhead>.btn{width:100%}.ai-report .paper h1{font-size:21px}}
 @media print{.ai-report{display:block}.ai-report .report-tools{display:none!important}.ai-report .paper{width:100%;max-width:none;padding:0;border:0;box-shadow:none;font-size:12pt}.ai-report .paper h1{font-size:14pt}.ai-report .paper h2{font-size:14pt}.ai-report .paper h3{font-size:12pt}.ai-report .paper p{orphans:3;widows:3}}
+
+
+/* Agenda: day-by-day cards, not a clinical attendance table. */
+.agenda-side-link{display:flex;align-items:center;gap:10px;border:0;border-radius:10px;background:transparent;color:#c8dcd3;text-align:left;font-size:13px;font-weight:700;padding:11px 13px;cursor:pointer;width:100%}
+.agenda-side-link:hover{background:rgba(255,255,255,.07);color:#fff}
+.agenda-side-link.active{background:rgba(255,255,255,.13);color:#fff}
+.agenda-side-icon{font-size:19px;line-height:1}
+.agenda-page{min-width:0;display:flex;flex-direction:column;gap:15px}
+.agenda-hero{margin:0}
+.agenda-hero .muted{font-size:13px;margin:7px 0 0}
+.agenda-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.agenda-week-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.agenda-week-nav strong{min-width:175px;text-align:center;font-size:13px;font-weight:700;color:var(--text)}
+.agenda-week-nav .btn{min-height:35px;padding:6px 12px}
+.agenda-search{max-width:245px;min-width:175px;background:#fafcfb;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:12px}
+.agenda-count{font-size:12px;font-weight:600;color:var(--muted);margin:0}
+.agenda-days{display:flex;flex-direction:column;gap:14px}
+.agenda-day{overflow:hidden}
+.agenda-day-header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;background:#f6faf7;border-bottom:1px solid var(--line)}
+.agenda-day-header h2{font-size:14px;font-weight:700;text-transform:capitalize;margin:0;color:var(--text)}
+.agenda-day-header>span{font-size:11px;color:var(--muted);white-space:nowrap}
+.agenda-day-list{padding:3px 17px}
+.agenda-appointment{display:grid;grid-template-columns:58px 42px minmax(0,1fr);align-items:start;gap:13px;padding:18px 0;border-bottom:1px solid var(--line)}
+.agenda-appointment:last-child{border-bottom:0}
+.agenda-time{font-size:14px;font-weight:750;color:var(--brand);padding-top:9px;white-space:nowrap}
+.agenda-avatar{width:42px;height:42px;border-radius:50%;background:#e4eee8;color:#245541;border:1px solid #d2e2d9;display:grid;place-items:center;overflow:hidden;padding:0;font-size:18px;font-weight:750;cursor:pointer}
+.agenda-avatar:hover{outline:2px solid #75a591;outline-offset:2px}
+.agenda-avatar img{width:100%;height:100%;object-fit:cover}
+.agenda-appointment-body{min-width:0;display:flex;flex-direction:column;gap:7px}
+.agenda-appointment-header{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}
+.agenda-patient-name{border:0;padding:0;background:transparent;color:var(--text);font-size:14px;font-weight:750;text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.agenda-patient-name:hover{color:var(--brand);text-decoration:underline}
+.agenda-status{font-size:10px;font-weight:700;border-radius:20px;padding:5px 9px;white-space:nowrap;background:#eff3f1;color:#5f7066}
+.agenda-status-realizada{background:#e5f4ea;color:#267046}
+.agenda-status-faltou{background:#ffe9e9;color:#a43c40}
+.agenda-status-proxima{background:#e7f0ff;color:#2d5d9b}
+.agenda-status-prevista{background:#f0f3f8;color:#53657c}
+.agenda-status-sem-registro{background:#fff2dd;color:#876324}
+.agenda-meta{font-size:11px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center;line-height:1.5}
+.agenda-session-flags{display:flex;gap:6px;flex-wrap:wrap}
+.agenda-session-flag{border-radius:6px;background:#e9f3ec;color:#3f7957;font-size:10px;font-weight:600;padding:5px 8px}
+.agenda-session-flag.missed{background:#fff0f0;color:#a84b4b}
+.agenda-history-toggle{border:0;background:transparent;color:var(--brand);font-size:11px;font-weight:700;display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer}
+.agenda-history-toggle:hover{text-decoration:underline}
+.agenda-history-entries{display:flex;flex-direction:column;gap:0;margin-top:5px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.agenda-history-entry{display:flex;align-items:center;gap:12px;padding:9px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.agenda-history-entry:last-child{border-bottom:0}
+.agenda-history-entry strong{font-size:11px;font-weight:650;color:var(--text);flex:1;min-width:100px}
+.agenda-unplanned-note{font-size:12px;margin:12px 17px 0}
+.agenda-unplanned-list{padding:10px 17px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.agenda-unplanned-patient{display:flex;align-items:center;gap:12px;min-width:0;border:1px solid var(--line);padding:11px;border-radius:10px}
+.agenda-unplanned-patient>div{min-width:0}
+.agenda-unplanned-patient .agenda-meta{margin-top:3px}
+@media(max-width:750px){.agenda-toolbar{align-items:stretch}.agenda-search{max-width:none;width:100%}.agenda-week-nav{width:100%;justify-content:space-between}.agenda-week-nav strong{min-width:0;flex:1}.agenda-day-list{padding:0 13px}.agenda-day-header{padding:12px 14px}.agenda-appointment{grid-template-columns:45px 36px minmax(0,1fr);gap:9px}.agenda-avatar{width:36px;height:36px}.agenda-time{font-size:12px}.agenda-appointment-header{align-items:flex-start}.agenda-status{font-size:10px}.session-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:420px){.agenda-appointment{grid-template-columns:38px 32px minmax(0,1fr);gap:7px}.agenda-avatar{width:32px;height:32px}.agenda-time{font-size:11px}.agenda-week-nav{gap:5px}.agenda-week-nav .btn{padding:6px 8px}.agenda-day-header h2{font-size:12px}}
+@media print{.agenda-side-link,.agenda-toolbar,.agenda-history-toggle{display:none}}

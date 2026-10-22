@@ -13,6 +13,7 @@ import InstrumentDelivery from "../components/InstrumentDelivery";
 import ReportPanel from "../components/ReportPanel";
 import ReportSettings from "../components/ReportSettings";
 import DatePicker from "../components/DatePicker";
+import AgendaPanel from "../components/AgendaPanel";
 import { DEFAULT_REPORT_SETTINGS } from "../supabase/functions/_shared/reportCore.mjs";
 import { deliveryDate, instrumentForm, waitingInSession } from "../lib/instrumentDelivery.mjs";
 
@@ -86,6 +87,7 @@ function patientPayload(patient) {
 function sessionPayload(session) {
   return {
     occurred_on: session.occurred_on,
+    attendance_status: session.attendance_status || "realizada",
     duration_minutes: Number(session.duration_minutes),
     title: session.title || "",
     notes: session.notes || "",
@@ -194,6 +196,9 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [patients, setPatients] = useState([]);
+  const [agendaSessions, setAgendaSessions] = useState([]);
+  const [agendaLoading, setAgendaLoading] = useState(false);
+  const [agendaError, setAgendaError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(null);
   const [sessions, setSessions] = useState([]);
@@ -478,6 +483,47 @@ export default function Home() {
     const timer = hasOpenInstrumentForms ? setInterval(() => void refreshDelivery(), 15000) : null;
     return () => { cancelled = true; window.removeEventListener("focus", refreshDelivery); if (timer) clearInterval(timer); };
   }, [selectedId, user?.id, hasOpenInstrumentForms]);
+
+  useEffect(() => {
+    if (tab !== "agenda" || !user?.id || !supabase) return;
+    let cancelled = false;
+    async function loadAgendaSessions() {
+      setAgendaLoading(true);
+      setAgendaError("");
+      const rows = [];
+      const pageSize = 500;
+      try {
+        for (let offset = 0; ; offset += pageSize) {
+          const { data, error } = await supabase.from("psico_sessions")
+            .select("id, patient_id, occurred_on, title, attendance_status, created_at")
+            .order("occurred_on", { ascending: false })
+            .order("id", { ascending: false })
+            .range(offset, offset + pageSize - 1);
+          if (error) throw error;
+          if (cancelled) return;
+          rows.push(...(data || []));
+          if (!data || data.length < pageSize) break;
+        }
+        if (!cancelled) setAgendaSessions(rows);
+      } catch (error) {
+        if (!cancelled) setAgendaError(error?.message || "Erro desconhecido.");
+      } finally {
+        if (!cancelled) setAgendaLoading(false);
+      }
+    }
+    void loadAgendaSessions();
+    return () => { cancelled = true; };
+  }, [tab, user?.id]);
+
+  async function openAgenda() {
+    if (!await autosave.flushAll()) {
+      setNotice("Não foi possível salvar as alterações pendentes antes de abrir a agenda.");
+      return;
+    }
+    setTab("agenda");
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   function openTab(name) {
     void autosave.flushAll();
@@ -963,11 +1009,15 @@ export default function Home() {
       {menuOpen && <button className="backdrop" aria-label="Fechar menu" onClick={() => setMenuOpen(false)} />}
       <aside className={menuOpen ? "side-menu show" : "side-menu"}>
         <div className="brand"><div className="brandmark">PSI</div><strong>Painel Psico</strong></div>
+        <button type="button" className={"agenda-side-link" + (tab === "agenda" ? " active" : "")}
+          aria-current={tab === "agenda" ? "page" : undefined} onClick={() => void openAgenda()}>
+          <span className="agenda-side-icon" aria-hidden="true">▦</span>Agenda
+        </button>
         <div className="side-section">
           <div className="side-label">Pacientes</div>
           <input className="patient-search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar paciente" />
           <div className="patient-links" aria-label={search.trim() ? "Resultados da busca" : "Pacientes recentes"}>
-            {listed.map(p => <button key={p.id} className={selectedId === p.id ? "patient-link active" : "patient-link"} onClick={() => void selectPatient(p.id)}>
+            {listed.map(p => <button key={p.id} className={selectedId === p.id && tab !== "agenda" ? "patient-link active" : "patient-link"} onClick={() => void selectPatient(p.id)}>
               <span className="patient-sidebar-avatar" aria-hidden="true">
                 {patientPhotoUrls[p.id] ? <img src={patientPhotoUrls[p.id]} alt="" /> : p.name.trim().slice(0, 1).toUpperCase()}
               </span><span className="patient-sidebar-name">{p.name}</span>
@@ -993,8 +1043,8 @@ export default function Home() {
       <main onBlurCapture={() => { if (autosave.isPending()) void autosave.flushAll(); }}>
         <header className="topbar">
           <button className="menu-btn" aria-label="Abrir menu" onClick={() => setMenuOpen(true)}>☰</button>
-          <strong>{tab === "configuracoes" ? "Configurações" : form?.name || "Painel Psico"}</strong>
-          {tab !== "configuracoes" && <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>}
+          <strong>{tab === "configuracoes" ? "Configurações" : tab === "agenda" ? "Agenda" : form?.name || "Painel Psico"}</strong>
+          {tab !== "configuracoes" && tab !== "agenda" && <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>}
         </header>
 
         <div className="content">
@@ -1009,7 +1059,10 @@ export default function Home() {
             </form>
           </div>}
 
-          {tab === "configuracoes" ? <div className="settings-page">
+          {tab === "agenda" ? <AgendaPanel patients={patients} sessions={agendaSessions}
+            patientPhotoUrls={patientPhotoUrls} loading={agendaLoading} error={agendaError}
+            onOpenPatient={id => void selectPatient(id)} />
+          : tab === "configuracoes" ? <div className="settings-page">
             <div className="hero"><h1>Configurações</h1></div>
             <div className="content-stack">
               <section className="card">
@@ -1261,6 +1314,13 @@ export default function Home() {
                     <div className="session-fields">
                       <InputField label="Título" value={s.title} onChange={v => changeSession(s.id, "title", v)} />
                       <InputField label="Data" type="date" value={s.occurred_on} onChange={v => changeSession(s.id, "occurred_on", v)} />
+                      <label className="field"><span>Comparecimento</span>
+                        <select aria-label="Comparecimento" value={s.attendance_status || "realizada"}
+                          onChange={e => changeSession(s.id, "attendance_status", e.target.value)}>
+                          <option value="realizada">Realizada</option>
+                          <option value="faltou">Faltou</option>
+                        </select>
+                      </label>
                       <InputField label="Duração (min)" type="number" value={String(s.duration_minutes)} onChange={v => changeSession(s.id, "duration_minutes", v)} />
                     </div>
                     <SessionCustomFields
