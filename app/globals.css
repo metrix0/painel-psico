@@ -605,3 +605,16 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 .anamnese-section-title{font-size:13px;font-weight:700;color:var(--brand);margin:17px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .anamnese-question-block{min-width:0}
 .anamnese-question-block .session-custom-field{margin-bottom:9px}
+
+
+/* Anamnese snapshots keep the model frozen for each patient. */
+.anamnese-version-note{margin:0 0 7px;padding:10px 12px;border:1px solid var(--line);
+  background:#f8faf9;color:var(--muted);border-radius:9px;font-size:11px;font-weight:600}
+.anamnese-history-list{display:flex;flex-direction:column;gap:10px;margin-top:19px;
+  padding-top:16px;border-top:1px solid var(--line)}
+.anamnese-history-list>h3{margin:0;font-size:12px;color:var(--text)}
+.anamnese-history{border:1px solid var(--line);border-radius:10px;background:#fafcfb;min-width:0}
+.anamnese-history>summary{cursor:pointer;padding:12px 14px;font-weight:600;font-size:12px;color:var(--brand)}
+.anamnese-history>.session-custom-fields{padding:14px;border-top:1px solid var(--line)}
+.anamnese-history .session-custom-field input:disabled,
+.anamnese-history .session-custom-field textarea:disabled{opacity:1;color:var(--text);background:#fff}
