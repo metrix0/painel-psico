@@ -1123,7 +1123,9 @@ export default function Home() {
   const editingAnamneseTemplate = anamneseTemplates.find(t => t.id === editingTemplateId && !t.archived);
   const selectedAnswers = anamnese.template_answers?.[form?.anamnese_template_id] || {};
   const complete = instruments.filter(i => i.status === "Concluído").length;
-  const missing = instruments.filter(i => i.status !== "Concluído").length;
+  const consultationWeekday = weekdayFromConsultationDate(anamnese.consulta_data || "");
+  const sessionSchedule = consultationWeekday === "" ? "—"
+    : `${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][Number(consultationWeekday)]} · ${consultationTime || "—"}`;
 
   return (
     <div className="app">
@@ -1349,7 +1351,7 @@ export default function Home() {
               <div className="stat"><span>Idade</span><b>{formatAge(form.birth_date) || "—"}</b></div>
               <div className="stat"><span>Sessões</span><b>{sessions.length}</b></div>
               <div className="stat"><span>Instrumentos</span><b>{complete}/{instruments.length}</b></div>
-              <div className="stat"><span>Pendentes</span><b>{missing}</b></div>
+              <div className="stat"><span>Sessão</span><b>{sessionSchedule}</b></div>
             </div>
 
             <div className="mobile-tabs">
