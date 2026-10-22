@@ -15,7 +15,11 @@ import ReportSettings from "../components/ReportSettings";
 import DatePicker from "../components/DatePicker";
 import AgendaPanel from "../components/AgendaPanel";
 import AgendaSettings from "../components/AgendaSettings";
-import { DEFAULT_AGENDA_SLOTS, normalizeAgendaSlots } from "../lib/agendaSettings.mjs";
+import {
+  AGENDA_WEEKDAYS, DEFAULT_AGENDA_SLOTS, hourLabel, nextConsultationDateForWeekday,
+  normalizeAgendaSlots, slotHoursForDate, weekdayFromConsultationDate
+} from "../lib/agendaSettings.mjs";
+import { localISO } from "../lib/agenda.mjs";
 import { DEFAULT_REPORT_SETTINGS } from "../supabase/functions/_shared/reportCore.mjs";
 import { deliveryDate, instrumentForm, waitingInSession } from "../lib/instrumentDelivery.mjs";
 
@@ -686,6 +690,22 @@ export default function Home() {
     autosave.track("patient:" + selectedId, patientPayload(next));
   }
 
+  function setConsultationWeekday(weekday) {
+    const date = nextConsultationDateForWeekday(weekday, localISO());
+    const allowed = slotHoursForDate(agendaSlots, date).map(hourLabel);
+    const currentTime = form.anamnese?.consulta_horario || "";
+    const next = {
+      ...form,
+      anamnese: {
+        ...form.anamnese,
+        consulta_data: date,
+        consulta_horario: allowed.includes(currentTime) ? currentTime : ""
+      }
+    };
+    setForm(next);
+    autosave.track("patient:" + selectedId, patientPayload(next));
+  }
+
   async function deletePatient() {
     if (!form || !window.confirm("Excluir o paciente e todos os registros?")) return;
     if (!await autosave.flushAll()) {
@@ -1042,6 +1062,9 @@ export default function Home() {
     : autosave.status === "pending" ? "Pendente"
     : autosave.status === "error" ? "Não salvo" : "Salvo";
   const anamnese = form?.anamnese || EMPTY_ANAMNESE;
+  const consultationHours = slotHoursForDate(agendaSlots, anamnese.consulta_data || "");
+  const consultationTime = anamnese.consulta_horario || "";
+  const consultationTimeConfigured = consultationHours.some(hour => hourLabel(hour) === consultationTime);
   const selectedAnamneseTemplate = anamneseTemplates.find(t => t.id === form?.anamnese_template_id);
   const editingAnamneseTemplate = anamneseTemplates.find(t => t.id === editingTemplateId && !t.archived);
   const selectedAnswers = anamnese.template_answers?.[form?.anamnese_template_id] || {};
@@ -1283,10 +1306,26 @@ export default function Home() {
                   <InputField label="Nome" value={form.name} onChange={v => setField("name", v)} />
                   <InputField label="Data de nascimento" type="date" value={form.birth_date} onChange={v => setField("birth_date", v)} />
                   <div className="consultation-datetime">
-                    <DatePicker label="Dia da consulta" value={anamnese.consulta_data || ""}
-                      onChange={v => setAnamnese("consulta_data", v)} />
-                    <InputField label="Horário da consulta" type="time" value={anamnese.consulta_horario || ""}
-                      onChange={v => setAnamnese("consulta_horario", v)} />
+                    <label className="field"><span>Dia da consulta</span>
+                      <select aria-label="Dia da consulta" value={weekdayFromConsultationDate(anamnese.consulta_data || "")}
+                        onChange={e => setConsultationWeekday(e.target.value)}>
+                        <option value="">Selecione o dia da semana</option>
+                        {AGENDA_WEEKDAYS.map(([day, label]) =>
+                          <option key={day} value={String(day)}>{label}</option>)}
+                      </select>
+                    </label>
+                    <label className="field"><span>Horário da consulta</span>
+                      <select aria-label="Horário da consulta" value={consultationTime}
+                        disabled={agendaSettingsLoading || !anamnese.consulta_data || !consultationHours.length}
+                        onChange={e => setAnamnese("consulta_horario", e.target.value)}>
+                        <option value="">{agendaSettingsLoading ? "Carregando horários…"
+                          : !anamnese.consulta_data ? "Selecione o dia"
+                          : consultationHours.length ? "Selecione o horário" : "Sem horários disponíveis"}</option>
+                        {consultationTime && !consultationTimeConfigured &&
+                          <option value={consultationTime}>{consultationTime} (fora da agenda)</option>}
+                        {consultationHours.map(hour => <option key={hour} value={hourLabel(hour)}>{hourLabel(hour)}</option>)}
+                      </select>
+                    </label>
                   </div>
                   <InputField label="Escolaridade" value={form.grade} onChange={v => setField("grade", v)} />
                   <InputField label="Escola" value={form.school} onChange={v => setField("school", v)} />

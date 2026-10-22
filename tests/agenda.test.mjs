@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { agendaWeek, nextWeeklyDate, patientAgenda, weekStart, localISO } from "../lib/agenda.mjs";
+import {
+  hourLabel, nextConsultationDateForWeekday, slotHoursForDate, weekdayFromConsultationDate
+} from "../lib/agendaSettings.mjs";
 
 const patient = {id: "p1", name: "Valentina", anamnese: { consulta_data: "2026-10-07", consulta_horario: "09:00" }};
 const clock = new Date(2026, 9, 21, 8, 30);
@@ -35,4 +38,23 @@ test("agenda displays recurring patients and ad hoc recorded sessions", () => {
   assert.equal(week[2].appointments[0].patient.id, "p1");
   assert.equal(week[2].appointments[0].status, "realizada");
   assert.equal(localISO(clock), "2026-10-21");
+});
+
+
+test("weekday selection preserves weekly recurrence using a next-weekday date anchor", () => {
+  assert.equal(weekdayFromConsultationDate("2026-10-07"), "3");
+  assert.equal(weekdayFromConsultationDate(""), "");
+  assert.equal(nextConsultationDateForWeekday("3", "2026-10-21"), "2026-10-21");
+  assert.equal(nextConsultationDateForWeekday("1", "2026-10-21"), "2026-10-26");
+  assert.equal(nextConsultationDateForWeekday("0", "2026-10-21"), "2026-10-25");
+  assert.equal(nextConsultationDateForWeekday("", "2026-10-21"), "");
+  const recurring = {...patient, anamnese: {consulta_data: nextConsultationDateForWeekday("1", "2026-10-21"), consulta_horario: "08:00"}};
+  assert.equal(agendaWeek([recurring], [], "2026-10-26", clock)[0].appointments.length, 1);
+});
+
+test("appointment times use only the selected weekday slots in whole-hour increments", () => {
+  const slots = {"1": [8, 10, 15], "2": [9, 11]};
+  assert.deepEqual(slotHoursForDate(slots, "2026-10-26").map(hourLabel), ["08:00", "10:00", "15:00"]);
+  assert.deepEqual(slotHoursForDate(slots, "2026-10-27").map(hourLabel), ["09:00", "11:00"]);
+  assert.equal(slotHoursForDate({"1": []}, "2026-10-26").length, 0);
 });
