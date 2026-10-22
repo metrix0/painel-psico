@@ -22,8 +22,8 @@ create policy "Owner reads anamnese template versions"
   on public.psico_anamnese_template_versions for select to authenticated
   using (owner_id = (select auth.uid()));
 
+revoke all on public.psico_anamnese_template_versions from public, anon, authenticated;
 grant select on public.psico_anamnese_template_versions to authenticated;
-revoke all on public.psico_anamnese_template_versions from anon;
 
 -- The current definitions become revision 1. Do not replace existing history.
 insert into public.psico_anamnese_template_versions
