@@ -684,7 +684,7 @@ export default function Home() {
       return;
     }
     setBusy(true); setNotice("");
-    const { data, error } = await supabase.from("psico_patients").insert({ name }).select().single();
+    const { data, error } = await supabase.from("psico_patients").insert({ name, anamnese: { consulta_data: localISO() } }).select().single();
     if (error) setNotice(error.message);
     else {
       setPatients(prev => [data, ...prev]);
