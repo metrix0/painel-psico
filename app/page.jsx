@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { configured, supabase } from "../lib/supabase";
 import { useAutosave } from "../lib/useAutosave";
 import QuestionAnswerInput from "../components/QuestionAnswerInput";
+import { patientAnamneseSnapshot, selectPatientAnamnese } from "../lib/anamneseVersions.mjs";
 import { InstrumentTable, TableEditor } from "../components/InstrumentTables";
 import { createTable, instantiateTables } from "../lib/instrumentTables.mjs";
 import InstrumentFormEditor from "../components/InstrumentFormEditor";
@@ -804,8 +805,35 @@ export default function Home() {
       ? anamneseTemplates.find(t => !t.archived && t.id !== id)?.id || null : prev);
   }
 
-  function selectAnamneseTemplate(id) {
-    setField("anamnese_template_id", id || null);
+  async function selectAnamneseTemplate(id) {
+    if (!form) return;
+    if (!id || form.anamnese?.template_snapshots?.[id]) {
+      const next = selectPatientAnamnese(form, id, null);
+      if (next) {
+        setForm(next);
+        autosave.track("patient:" + selectedId, patientPayload(next));
+      }
+      return;
+    }
+    setBusy(true);
+    try {
+      if (!await autosave.flushAll()) {
+        setNotice("Salve as alterações pendentes antes de selecionar a anamnese.");
+        return;
+      }
+      // Fetch the committed version, not a possibly unsaved settings editor draft.
+      const { data: template, error } = await supabase.from("psico_anamnese_templates")
+        .select("id, name, revision, questions").eq("id", id).single();
+      if (error || !template) throw error || new Error("Modelo não encontrado.");
+      const next = selectPatientAnamnese(form, id, template);
+      if (!next) throw new Error("Não foi possível guardar a versão da anamnese.");
+      setForm(next);
+      autosave.track("patient:" + selectedId, patientPayload(next));
+    } catch (error) {
+      setNotice("Não foi possível selecionar a anamnese: " + (error?.message || "erro desconhecido"));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function setAnamneseTemplateAnswer(questionId, value) {
@@ -1075,6 +1103,14 @@ export default function Home() {
   const consultationTime = anamnese.consulta_horario || "";
   const consultationTimeConfigured = consultationHours.some(hour => hourLabel(hour) === consultationTime);
   const selectedAnamneseTemplate = anamneseTemplates.find(t => t.id === form?.anamnese_template_id);
+  const selectedAnamneseSnapshot = patientAnamneseSnapshot(anamnese, form?.anamnese_template_id, selectedAnamneseTemplate);
+  const historicalAnamneses = Object.entries(anamnese.template_snapshots || {})
+    .filter(([id]) => id !== form?.anamnese_template_id &&
+      Object.keys(anamnese.template_answers?.[id] || {}).length > 0)
+    .map(([id, snapshot]) => ({
+      id, snapshot: patientAnamneseSnapshot(anamnese, id, snapshot),
+      answers: anamnese.template_answers?.[id] || {}
+    }));
   const editingAnamneseTemplate = anamneseTemplates.find(t => t.id === editingTemplateId && !t.archived);
   const selectedAnswers = anamnese.template_answers?.[form?.anamnese_template_id] || {};
   const complete = instruments.filter(i => i.status === "Concluído").length;
@@ -1349,8 +1385,8 @@ export default function Home() {
                 <div className="cardhead"><h2>Anamnese</h2></div>
                 <div className="cardbody">
                   <label className="field anamnese-type-field"><span>Tipo de anamnese</span>
-                    <select value={form.anamnese_template_id || ""}
-                      onChange={event => selectAnamneseTemplate(event.target.value)}>
+                    <select value={form.anamnese_template_id || ""} disabled={busy}
+                      onChange={event => void selectAnamneseTemplate(event.target.value)}>
                       <option value="">Selecionar modelo</option>
                       {anamneseTemplates.filter(template => !template.archived ||
                         template.id === form.anamnese_template_id).map(template => (
@@ -1358,24 +1394,29 @@ export default function Home() {
                           {template.name || "Modelo sem nome"}{template.archived ? " (arquivado)" : ""}
                         </option>
                       ))}
+                      {form.anamnese_template_id && !selectedAnamneseTemplate && selectedAnamneseSnapshot &&
+                        <option value={form.anamnese_template_id}>{selectedAnamneseSnapshot.name} (histórico)</option>}
                     </select>
                   </label>
-                  {form.anamnese_template_id && selectedAnamneseTemplate ? (
+                  {form.anamnese_template_id && selectedAnamneseSnapshot ? (
                     <div className="session-custom-fields anamnese-answers">
-                      {(selectedAnamneseTemplate.questions || []).map((question, index) =>
+                      <p className="anamnese-version-note">
+                        {selectedAnamneseSnapshot.name} · Versão {selectedAnamneseSnapshot.revision} preservada para este paciente
+                      </p>
+                      {(selectedAnamneseSnapshot.questions || []).map((question, index) =>
                         <div className="anamnese-question-block" key={question.id}>
                           {question.section && (index === 0 ||
-                            selectedAnamneseTemplate.questions[index - 1]?.section !== question.section) &&
+                            selectedAnamneseSnapshot.questions[index - 1]?.section !== question.section) &&
                             <h3 className="anamnese-section-title">{question.section}</h3>}
                           <QuestionAnswerInput field={question}
-                            namePrefix={"anamnese-" + selectedAnamneseTemplate.id}
+                            namePrefix={"anamnese-" + form.id + "-" + selectedAnamneseSnapshot.template_id}
                             value={selectedAnswers[question.id]}
+                            disabled={Boolean(question.historical_unknown)}
                             onChange={value => setAnamneseTemplateAnswer(question.id, value)} />
                         </div>)}
-                      {!selectedAnamneseTemplate.questions?.length &&
+                      {!selectedAnamneseSnapshot.questions?.length &&
                         <p className="muted">Este modelo ainda não tem perguntas. Configure-o em Configurações.</p>}
-                    </div>
-                  ) : form.anamnese_template_id ? (
+                    </div>                  ) : form.anamnese_template_id ? (
                     <p className="muted">Modelo não encontrado. As respostas existentes foram preservadas.</p>
                   ) : hasLegacyAnamnese(anamnese) ? (
                     <div className="legacy-anamnese">
@@ -1388,6 +1429,21 @@ export default function Home() {
                   ) : (
                     <p className="muted">Selecione o modelo de anamnese deste paciente. Crie modelos em Configurações → Configurar Anamneses.</p>
                   )}
+                  {historicalAnamneses.length > 0 && <div className="anamnese-history-list">
+                    <h3>Anamneses anteriores</h3>
+                    {historicalAnamneses.map(({ id, snapshot, answers }) => snapshot &&
+                      <details className="anamnese-history" key={id}>
+                        <summary>{snapshot.name} · Versão {snapshot.revision} · respostas preservadas</summary>
+                        <div className="session-custom-fields">
+                          {(snapshot.questions || []).filter(question =>
+                            Object.prototype.hasOwnProperty.call(answers, question.id)).map((question, index) =>
+                            <div className="anamnese-question-block" key={question.id}>
+                              <QuestionAnswerInput field={question} value={answers[question.id]}
+                                disabled namePrefix={"historico-" + form.id + "-" + id} onChange={() => {}} />
+                            </div>)}
+                        </div>
+                      </details>)}
+                  </div>}
                   <div className="card-actions">
                     <button className="btn danger" disabled={busy} onClick={deletePatient}>Excluir paciente</button>
                   </div>
