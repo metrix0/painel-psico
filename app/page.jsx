@@ -1149,9 +1149,9 @@ export default function Home() {
         </div>
         {form && <nav className="side-nav" aria-label="Seções">
           {[
-            ["anamnese", "Anamnese", "clipboard-list"],
-            ["sessoes", "Sessões", "notebook-pen"],
-            ["instrumentos", "Instrumentos", "clipboard-check"],
+            ["anamnese", "Anamnese", "message-circle"],
+            ["sessoes", "Sessões", "clock"],
+            ["instrumentos", "Instrumentos", "brain"],
             ["laudo", "Laudo", "file-text"]
           ].map(([key, label, icon]) => <button key={key} className={tab === key ? "active" : ""}
             onClick={() => openTab(key)}><SidebarIcon name={icon} />{label}</button>)}
