@@ -1149,8 +1149,8 @@ export default function Home() {
         </div>
         {form && <nav className="side-nav" aria-label="Seções">
           {[
-            ["anamnese", "Anamnese", "message-circle"],
-            ["sessoes", "Sessões", "clock"],
+            ["anamnese", "Anamnese", "user-round"],
+            ["sessoes", "Sessões", "message-circle"],
             ["instrumentos", "Instrumentos", "brain"],
             ["laudo", "Laudo", "file-text"]
           ].map(([key, label, icon]) => <button key={key} className={tab === key ? "active" : ""}
