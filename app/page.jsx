@@ -219,6 +219,7 @@ export default function Home() {
   const [sessionFields, setSessionFields] = useState([]);
   const [sessionFieldsLoading, setSessionFieldsLoading] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState({});
+  const [expandedInstrumentTemplates, setExpandedInstrumentTemplates] = useState({});
   const [instruments, setInstruments] = useState([]);
   const [reportSettings, setReportSettings] = useState(null);
   const [instrumentTemplates, setInstrumentTemplates] = useState([]);
@@ -956,6 +957,7 @@ export default function Home() {
     else {
       autosave.register("instrument_template:" + data.id, templatePayload(data));
       setInstrumentTemplates(prev => [...prev, data]);
+      setExpandedInstrumentTemplates(prev => ({ ...prev, [data.id]: true }));
     }
     setBusy(false);
   }
@@ -1140,7 +1142,7 @@ export default function Home() {
         <div className="side-section">
           <div className="side-label">Pacientes</div>
           <input className="patient-search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar paciente" />
-          <div className="patient-links" aria-label={search.trim() ? "Resultados da busca" : "Pacientes recentes"}>
+          <div className={"patient-links" + (search.trim() ? " is-searching" : "")} aria-label={search.trim() ? "Resultados da busca" : "Pacientes recentes"}>
             {listed.map(p => <button key={p.id} className={selectedId === p.id && tab !== "agenda" ? "patient-link active" : "patient-link"} onClick={() => void selectPatient(p.id)}>
               <span className="patient-sidebar-avatar" aria-hidden="true">
                 {patientPhotoUrls[p.id] ? <img src={patientPhotoUrls[p.id]} alt="" /> : p.name.trim().slice(0, 1).toUpperCase()}
@@ -1303,15 +1305,31 @@ export default function Home() {
                 <div className="cardbody instrument-list">
                   {templatesLoading && <p className="muted">Carregando instrumentos…</p>}
                   {!templatesLoading && !instrumentTemplates.some(t => !t.archived) && <p className="muted">Crie os instrumentos que poderão ser adicionados aos pacientes.</p>}
-                  {instrumentTemplates.filter(t => !t.archived).map(t => <div className="instrument-entry" key={t.id}>
-                    <InputField label="Nome do instrumento" value={t.name} onChange={name => changeTemplate(t.id, { name })} />
-                    <InputField label="Área avaliada" value={t.category} onChange={category => changeTemplate(t.id, { category })} />
-                    {(t.tables || []).map(table => <TableEditor key={table.id} table={table}
-                      onChange={next => changeTemplate(t.id, { tables: t.tables.map(item => item.id === table.id ? next : item) })}
-                      onRemove={() => { if (window.confirm("Remover esta tabela do modelo?")) changeTemplate(t.id, { tables: t.tables.filter(item => item.id !== table.id) }); }} />)}
-                    <button className="btn soft" onClick={() => changeTemplate(t.id, { tables: [...(t.tables || []), createTable()] })}>+ Adicionar tabela</button>
-                    <InstrumentFormEditor questions={t.form_questions ?? null} onChange={form_questions => changeTemplate(t.id, { form_questions })} />
-                    <button className="text-btn" onClick={() => void archiveTemplate(t.id)}>Remover instrumento</button>
+                  {instrumentTemplates.filter(t => !t.archived).map(t => <div className="instrument-entry instrument-template-entry" key={t.id}>
+                    <button type="button" className={"session-summary" + (expandedInstrumentTemplates[t.id] ? " is-open" : "")}
+                      aria-expanded={!!expandedInstrumentTemplates[t.id]} aria-controls={"instrument-template-details-" + t.id}
+                      onClick={() => setExpandedInstrumentTemplates(prev => ({ ...prev, [t.id]: !prev[t.id] }))}>
+                      <span className="session-summary-main">
+                        <strong>{t.name || "Instrumento sem nome"}</strong>
+                        {t.category && <span className="session-summary-meta">{t.category}</span>}
+                      </span>
+                      <span className="session-summary-toggle" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </span>
+                    </button>
+                    {expandedInstrumentTemplates[t.id] && <div id={"instrument-template-details-" + t.id} className="session-details">
+                      <InputField label="Nome do instrumento" value={t.name} onChange={name => changeTemplate(t.id, { name })} />
+                      <InputField label="Área avaliada" value={t.category} onChange={category => changeTemplate(t.id, { category })} />
+                      {(t.tables || []).map(table => <TableEditor key={table.id} table={table}
+                        onChange={next => changeTemplate(t.id, { tables: t.tables.map(item => item.id === table.id ? next : item) })}
+                        onRemove={() => { if (window.confirm("Remover esta tabela do modelo?")) changeTemplate(t.id, { tables: t.tables.filter(item => item.id !== table.id) }); }} />)}
+                      <button type="button" className="btn soft" onClick={() => changeTemplate(t.id, { tables: [...(t.tables || []), createTable()] })}>+ Adicionar tabela</button>
+                      <InstrumentFormEditor questions={t.form_questions ?? null} onChange={form_questions => changeTemplate(t.id, { form_questions })} />
+                      <button type="button" className="text-btn" onClick={() => void archiveTemplate(t.id)}>Remover instrumento</button>
+                    </div>}
                   </div>)}
                 </div>
               </section>

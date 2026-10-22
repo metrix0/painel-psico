@@ -639,3 +639,15 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 .user-access-credentials p{font-size:11px;color:var(--muted);margin:0}
 @media(max-width:600px){.user-access-form{flex-direction:column;align-items:stretch}
 .user-access-form>.field{min-width:0;width:100%}}
+
+/* Three recently visited patients never have an inner scrolling area. */
+.side-menu{scrollbar-width:none;-ms-overflow-style:none}
+.side-menu::-webkit-scrollbar{display:none}
+.side-section{flex-shrink:0;min-width:0}
+.patient-links{max-height:none;overflow:visible;flex-shrink:0;min-width:0}
+.patient-links.is-searching{max-height:min(230px,42vh);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;-ms-overflow-style:none}
+.patient-links.is-searching::-webkit-scrollbar{display:none}
+/* The editor uses the same collapsible summary and details as Sessões. */
+.instrument-template-entry{padding:0;display:block;overflow:hidden}
+.instrument-template-entry .session-details{display:flex;flex-direction:column;gap:12px}
+.instrument-template-entry .session-details>.btn,.instrument-template-entry .session-details>.text-btn{align-self:flex-start}
