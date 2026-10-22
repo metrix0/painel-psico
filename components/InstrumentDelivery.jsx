@@ -6,6 +6,7 @@ import QuestionAnswerInput from './QuestionAnswerInput';
 import { deliveryDate, instrumentForm, publicFormUrl } from '../lib/instrumentDelivery.mjs';
 
 export default function InstrumentDelivery({ instrument, hasForm, sessions, busy, onAction }) {
+  const [sendingSession, setSendingSession] = useState('');
   const [receivingSession, setReceivingSession] = useState('');
   const [showResponses, setShowResponses] = useState(false);
   const [copyMessage, setCopyMessage] = useState('');
@@ -17,21 +18,32 @@ export default function InstrumentDelivery({ instrument, hasForm, sessions, busy
     return () => { document.body.style.overflow = previousOverflow; responsesButton.current?.focus(); };
   }, [showResponses]);
   const form = instrumentForm(instrument);
-  const sessionId = receivingSession || sessions[0]?.id || '';
+  const sentSessionId = instrument.sent_at ? (instrument.sent_session_id || '') : (sendingSession || sessions[0]?.id || '');
+  const receivedSessionId = receivingSession || sessions[0]?.id || '';
+  const sessionOptions = sessions.map(s => <option key={s.id} value={s.id}>{s.title || 'Sessão'} — {s.occurred_on?.split('-').reverse().join('/')}</option>);
+
   return <div className="instrument-delivery">
     <div className="delivery-dates">
       {instrument.sent_at && <span>Enviado em {deliveryDate(instrument.sent_at)}</span>}
       {instrument.received_at && <span>Recebido / concluído em {deliveryDate(instrument.received_at)}</span>}
     </div>
     {!instrument.sent_at && !instrument.received_at && <div>
-      <button className="btn soft" disabled={busy || !instrument.session_id} onClick={() => onAction(instrument.id, 'send')}>Enviar Instrumento</button>
-      <p className="muted">Registra o envio ao paciente na sessão vinculada.</p>
+      <div className="instrument-send-row">
+        <label className="field"><span>Sessão de envio</span><select aria-label="Sessão de envio" value={sentSessionId} disabled={busy} onChange={e => setSendingSession(e.target.value)}>
+          {sessionOptions}
+        </select></label>
+        <button className="btn soft" disabled={busy || !sentSessionId} onClick={() => onAction(instrument.id, 'send', sentSessionId)}>Enviar Instrumento</button>
+      </div>
+      <p className="muted">Registra o envio ao paciente na sessão selecionada.</p>
     </div>}
+    {instrument.sent_at && <label className="field instrument-sent-session"><span>Sessão de envio</span><select aria-label="Alterar sessão de envio" value={sentSessionId} disabled={busy} onChange={e => onAction(instrument.id, 'set_sent_session', e.target.value)}>
+      {sessionOptions}
+    </select></label>}
     {instrument.sent_at && !instrument.received_at && <div className="instrument-receive-row">
-      <label className="field"><span>Sessão de recebimento</span><select aria-label="Sessão de recebimento" value={sessionId} onChange={e => setReceivingSession(e.target.value)}>
-        {sessions.map(s => <option key={s.id} value={s.id}>{s.title || 'Sessão'} — {s.occurred_on?.split('-').reverse().join('/')}</option>)}
+      <label className="field"><span>Sessão de recebimento</span><select aria-label="Sessão de recebimento" value={receivedSessionId} disabled={busy} onChange={e => setReceivingSession(e.target.value)}>
+        {sessionOptions}
       </select></label>
-      <button className="btn" disabled={busy || !sessionId} onClick={() => onAction(instrument.id, 'receive', sessionId)}>Marcar como recebido</button>
+      <button className="btn" disabled={busy || !receivedSessionId} onClick={() => onAction(instrument.id, 'receive', receivedSessionId)}>Marcar como recebido</button>
     </div>}
     {hasForm && !form && !instrument.received_at && <button className="btn soft" disabled={busy} onClick={() => onAction(instrument.id, 'generate')}>Gerar formulário</button>}
     {form?.submitted_at ? <button ref={responsesButton} className="text-btn" onClick={() => setShowResponses(true)}>Formulário recebido ({deliveryDate(form.submitted_at)})</button>

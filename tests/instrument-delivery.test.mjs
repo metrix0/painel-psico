@@ -18,3 +18,10 @@ test('waiting banners follow the original sending session, including sessions on
 test('public form links use the patient-facing domain', () => {
   assert.equal(publicFormUrl('valentina-toledo-teste-abc'), 'https://psico.johnvitor.com/valentina-toledo-teste-abc');
 });
+
+test('changing the sending session moves the waiting banner to later sessions', () => {
+  const instrument = { sent_at: '2026-10-20T10:30:00Z', sent_session_id: 's1' };
+  assert.equal(waitingInSession(instrument, sessions[2], sessions), true);
+  assert.equal(waitingInSession({ ...instrument, sent_session_id: 's3' }, sessions[2], sessions), false);
+  assert.equal(waitingInSession({ ...instrument, sent_session_id: 's3' }, sessions[1], sessions), true);
+});
