@@ -1414,9 +1414,6 @@ export default function Home() {
                   </label>
                   {form.anamnese_template_id && selectedAnamneseSnapshot ? (
                     <div className="session-custom-fields anamnese-answers">
-                      <p className="anamnese-version-note">
-                        {selectedAnamneseSnapshot.name} · Versão {selectedAnamneseSnapshot.revision} preservada para este paciente
-                      </p>
                       {(selectedAnamneseSnapshot.questions || []).map((question, index) =>
                         <div className="anamnese-question-block" key={question.id}>
                           {question.section && (index === 0 ||
@@ -1458,6 +1455,11 @@ export default function Home() {
                         </div>
                       </details>)}
                   </div>}
+                  {form.anamnese_template_id && selectedAnamneseSnapshot && (
+                    <p className="anamnese-version-note">
+                      {selectedAnamneseSnapshot.name} · Versão {selectedAnamneseSnapshot.revision} preservada para este paciente
+                    </p>
+                  )}
                   <div className="card-actions">
                     <button className="btn danger" disabled={busy} onClick={deletePatient}>Excluir paciente</button>
                   </div>
