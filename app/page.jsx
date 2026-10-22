@@ -589,8 +589,16 @@ export default function Home() {
         setNotice("Há alterações não salvas. Verifique a conexão ou os campos.");
         return;
       }
-      const { count, error } = await supabase.from("psico_sessions")
-        .select("id", { count: "exact", head: true }).eq("patient_id", id);
+      const [{ data: latestPatient, error: patientError }, { count, error }] = await Promise.all([
+        supabase.from("psico_patients").select("*").eq("id", id).single(),
+        supabase.from("psico_sessions").select("id", { count: "exact", head: true }).eq("patient_id", id)
+      ]);
+      if (patientError || !latestPatient) {
+        setNotice("Não foi possível carregar o registro atualizado do paciente: " +
+          (patientError?.message || "registro não encontrado"));
+        return;
+      }
+      setPatients(prev => prev.map(patient => patient.id === id ? latestPatient : patient));
       if (error) setNotice("Não foi possível verificar as sessões: " + error.message);
       if (id !== selectedId) {
         setForm(null);
