@@ -17,6 +17,7 @@ import ReportSettings from "../components/ReportSettings";
 import DatePicker from "../components/DatePicker";
 import AgendaPanel from "../components/AgendaPanel";
 import AgendaSettings from "../components/AgendaSettings";
+import UserAccessSettings from "../components/UserAccessSettings";
 import {
   AGENDA_WEEKDAYS, DEFAULT_AGENDA_SLOTS, hourLabel, nextConsultationDateForWeekday,
   normalizeAgendaSlots, slotHoursForDate, weekdayFromConsultationDate
@@ -1318,6 +1319,7 @@ export default function Home() {
                 setReportSettings(settings);
                 autosave.track("report_settings:" + user.id, {settings});
               }} />
+              <UserAccessSettings user={user} />
             </div>
           </div> : !form ? <div className="empty-state">
             <h1>Pacientes</h1>
