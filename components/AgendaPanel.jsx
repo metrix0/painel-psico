@@ -23,10 +23,9 @@ function PatientAvatar({ patient, photoUrl, onOpen }) {
 }
 
 function PatientAppointment({ entry, photoUrl, onOpen }) {
-  const { patient, info, status, onDate } = entry;
+  const { patient, info, status } = entry;
   const [historyOpen, setHistoryOpen] = useState(false);
   return <article className="agenda-appointment">
-    <div className="agenda-time">{info.time || "—"}</div>
     <PatientAvatar patient={patient} photoUrl={photoUrl} onOpen={onOpen} />
     <div className="agenda-appointment-body">
       <div className="agenda-appointment-header">
@@ -38,13 +37,8 @@ function PatientAppointment({ entry, photoUrl, onOpen }) {
         <span aria-hidden="true">·</span>
         <span>{info.missed} {info.missed === 1 ? "falta" : "faltas"}</span>
         <span aria-hidden="true">·</span>
-        <span>Próxima: {info.next ? formatAgendaDate(info.next, { day: "2-digit", month: "2-digit", year: "numeric" }) : "a definir"}{info.time ? " às " + info.time : ""}</span>
+        <span>Próxima: {info.next ? formatAgendaDate(info.next, { day: "2-digit", month: "2-digit", year: "numeric" }) : "a definir"}</span>
       </div>
-      {onDate.length > 0 && <div className="agenda-session-flags">
-        {onDate.map(session => <span key={session.id} className={"agenda-session-flag" + (session.attendance_status === "faltou" ? " missed" : "")}>
-          {session.title || "Sessão"} · {session.attendance_status === "faltou" ? "Faltou" : "Registrada"}
-        </span>)}
-      </div>}
       {info.related.length > 0 && <div className="agenda-history">
         <button type="button" className="agenda-history-toggle" aria-expanded={historyOpen}
           onClick={() => setHistoryOpen(current => !current)}>
