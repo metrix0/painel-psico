@@ -5,6 +5,7 @@ import { configured, supabase } from "../lib/supabase";
 import { useAutosave } from "../lib/useAutosave";
 import QuestionAnswerInput from "../components/QuestionAnswerInput";
 import { patientAnamneseSnapshot, selectPatientAnamnese } from "../lib/anamneseVersions.mjs";
+import SidebarIcon from "../components/SidebarIcon";
 import { InstrumentTable, TableEditor } from "../components/InstrumentTables";
 import { createTable, instantiateTables } from "../lib/instrumentTables.mjs";
 import InstrumentFormEditor from "../components/InstrumentFormEditor";
@@ -1131,7 +1132,7 @@ export default function Home() {
         <div className="brand"><div className="brandmark">PSI</div><strong>Painel Psico</strong></div>
         <button type="button" className={"agenda-side-link" + (tab === "agenda" ? " active" : "")}
           aria-current={tab === "agenda" ? "page" : undefined} onClick={() => void openAgenda()}>
-          <span className="agenda-side-icon" aria-hidden="true">▦</span>Agenda
+          <SidebarIcon name="calendar-days" />Agenda
         </button>
         <div className="side-section">
           <div className="side-label">Pacientes</div>
@@ -1148,15 +1149,18 @@ export default function Home() {
         </div>
         {form && <nav className="side-nav" aria-label="Seções">
           {[
-            ["anamnese", "Anamnese"], ["sessoes", "Sessões"],
-            ["instrumentos", "Instrumentos"], ["laudo", "Laudo"]
-          ].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => openTab(key)}>{label}</button>)}
+            ["anamnese", "Anamnese", "clipboard-list"],
+            ["sessoes", "Sessões", "notebook-pen"],
+            ["instrumentos", "Instrumentos", "clipboard-check"],
+            ["laudo", "Laudo", "file-text"]
+          ].map(([key, label, icon]) => <button key={key} className={tab === key ? "active" : ""}
+            onClick={() => openTab(key)}><SidebarIcon name={icon} />{label}</button>)}
         </nav>}
         <div className="sidebar-footer">
           <button type="button" className={"settings-link" + (tab === "configuracoes" ? " active" : "")}
             aria-current={tab === "configuracoes" ? "page" : undefined}
-            onClick={() => openTab("configuracoes")}>Configurações</button>
-          <button className="signout" onClick={signOut}>Sair</button>
+            onClick={() => openTab("configuracoes")}><SidebarIcon name="settings" />Configurações</button>
+          <button className="signout" onClick={signOut}><SidebarIcon name="log-out" />Sair</button>
         </div>
       </aside>
 
@@ -1483,7 +1487,7 @@ export default function Home() {
                     {instruments.filter(i => i.received_session_id === s.id).map(i => <span className="instrument-badge received" key={i.id + "-received"}>{i.name} Recebido</span>)}
                   </div>}
                   {instruments.filter(i => waitingInSession(i, s, sessions)).map(i => <div className="instrument-waiting" key={i.id}>
-                    <span>Aguardando conclusão de <strong>{i.name}</strong> · enviado em {deliveryDate(i.sent_at)}</span>
+                    <span className="instrument-wait-message"><SidebarIcon name="triangle-alert" className="instrument-wait-icon" /><span>Aguardando conclusão de <strong>{i.name}</strong> · enviado em {deliveryDate(i.sent_at)}</span></span>
                     <button className="btn" disabled={busy} onClick={() => void instrumentAction(i.id, "receive", s.id)}>Marcar como recebido</button>
                   </div>)}
                   {expandedSessions[s.id] && <div id={"session-details-" + s.id} className="session-details">
