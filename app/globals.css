@@ -516,7 +516,11 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 .agenda-side-link{display:flex;align-items:center;gap:10px;border:0;border-radius:10px;background:transparent;color:#c8dcd3;text-align:left;font-size:13px;font-weight:700;padding:11px 13px;cursor:pointer;width:100%}
 .agenda-side-link:hover{background:rgba(255,255,255,.07);color:#fff}
 .agenda-side-link.active{background:rgba(255,255,255,.13);color:#fff}
-.agenda-side-icon{font-size:19px;line-height:1}
+.sidebar-nav-icon{width:18px;height:18px;flex:0 0 18px;display:block}
+.side-nav button,.settings-link,.signout{display:flex;align-items:center;gap:10px}
+.instrument-wait-message{display:flex;align-items:flex-start;gap:8px}
+.instrument-wait-message>span{min-width:0}
+.instrument-wait-icon{width:17px;height:17px;flex:0 0 17px;display:block;color:#a86f16;margin-top:1px}
 .agenda-page{min-width:0;display:flex;flex-direction:column;gap:15px}
 .agenda-hero{margin:0}
 .agenda-hero .muted{font-size:13px;margin:7px 0 0}
