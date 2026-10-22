@@ -36,9 +36,14 @@ export default function InstrumentDelivery({ instrument, hasForm, sessions, busy
       </div>
       <p className="muted">Registra o envio ao paciente na sessão selecionada.</p>
     </div>}
-    {instrument.sent_at && <label className="field instrument-sent-session"><span>Sessão de envio</span><select aria-label="Alterar sessão de envio" value={sentSessionId} disabled={busy} onChange={e => onAction(instrument.id, 'set_sent_session', e.target.value)}>
-      {sessionOptions}
-    </select></label>}
+    {(instrument.sent_at || form?.submitted_at) && <div className="instrument-sent-actions">
+      {instrument.sent_at && <label className="field instrument-sent-session"><span>Sessão de envio</span><select aria-label="Alterar sessão de envio" value={sentSessionId} disabled={busy} onChange={e => onAction(instrument.id, 'set_sent_session', e.target.value)}>
+        {sessionOptions}
+      </select></label>}
+      {form?.submitted_at && <button type="button" ref={responsesButton} className="btn primary"
+        aria-label={"Ver resultados do formulário recebido em " + deliveryDate(form.submitted_at)}
+        onClick={() => setShowResponses(true)}>Ver resultados</button>}
+    </div>}
     {instrument.sent_at && !instrument.received_at && <div className="instrument-receive-row">
       <label className="field"><span>Sessão de recebimento</span><select aria-label="Sessão de recebimento" value={receivedSessionId} disabled={busy} onChange={e => setReceivingSession(e.target.value)}>
         {sessionOptions}
@@ -46,7 +51,7 @@ export default function InstrumentDelivery({ instrument, hasForm, sessions, busy
       <button className="btn" disabled={busy || !receivedSessionId} onClick={() => onAction(instrument.id, 'receive', receivedSessionId)}>Marcar como recebido</button>
     </div>}
     {hasForm && !form && !instrument.received_at && <button className="btn soft" disabled={busy} onClick={() => onAction(instrument.id, 'generate')}>Gerar formulário</button>}
-    {form?.submitted_at ? <button ref={responsesButton} className="text-btn" onClick={() => setShowResponses(true)}>Formulário recebido ({deliveryDate(form.submitted_at)})</button>
+    {form?.submitted_at ? null
       : form && !instrument.received_at ? <div className="form-share">
         <label className="field"><span>Link do formulário</span><input aria-label="Link do formulário" readOnly value={publicFormUrl(form.slug)} onFocus={e => e.target.select()} /></label>
         <button className="btn" onClick={async () => {

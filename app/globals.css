@@ -459,7 +459,8 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 .instrument-delivery>div>.muted{margin-top:7px}
 .delivery-dates{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:12px;color:var(--muted)}
 .delivery-dates:empty{display:none}
-.instrument-receive-row,.form-share{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+.instrument-receive-row,.form-share,.instrument-sent-actions{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.instrument-sent-actions>.btn{flex-shrink:0}
 .instrument-receive-row>.field,.instrument-send-row>.field,.instrument-sent-session{flex:0 1 280px;max-width:280px;min-width:min(100%,180px)}
 .form-share>.field{flex:1;min-width:180px}
 .instrument-send-row{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
