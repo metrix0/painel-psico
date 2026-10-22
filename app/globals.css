@@ -597,3 +597,8 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
   .agenda-settings-day{padding:11px 9px}
 }
 
+
+/* Group imported TEA questions by their original source sections. */
+.anamnese-section-title{font-size:13px;font-weight:700;color:var(--brand);margin:17px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.anamnese-question-block{min-width:0}
+.anamnese-question-block .session-custom-field{margin-bottom:9px}

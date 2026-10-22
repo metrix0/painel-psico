@@ -1168,6 +1168,9 @@ export default function Home() {
                         </div>
                         {(editingAnamneseTemplate.questions || []).map((question, index) => (
                           <div key={question.id} className="session-field-editor anamnese-question-editor">
+                            {question.section && (index === 0 ||
+                              editingAnamneseTemplate.questions[index - 1]?.section !== question.section) &&
+                              <h3 className="anamnese-section-title">{question.section}</h3>}
                             <div className="session-field-config-row">
                               <InputField label={"Pergunta " + (index + 1)} value={question.label}
                                 onChange={value => editAnamneseQuestion(editingAnamneseTemplate.id, question.id,
@@ -1350,11 +1353,16 @@ export default function Home() {
                   </label>
                   {form.anamnese_template_id && selectedAnamneseTemplate ? (
                     <div className="session-custom-fields anamnese-answers">
-                      {(selectedAnamneseTemplate.questions || []).map(question =>
-                        <QuestionAnswerInput key={question.id} field={question}
-                          namePrefix={"anamnese-" + selectedAnamneseTemplate.id}
-                          value={selectedAnswers[question.id]}
-                          onChange={value => setAnamneseTemplateAnswer(question.id, value)} />)}
+                      {(selectedAnamneseTemplate.questions || []).map((question, index) =>
+                        <div className="anamnese-question-block" key={question.id}>
+                          {question.section && (index === 0 ||
+                            selectedAnamneseTemplate.questions[index - 1]?.section !== question.section) &&
+                            <h3 className="anamnese-section-title">{question.section}</h3>}
+                          <QuestionAnswerInput field={question}
+                            namePrefix={"anamnese-" + selectedAnamneseTemplate.id}
+                            value={selectedAnswers[question.id]}
+                            onChange={value => setAnamneseTemplateAnswer(question.id, value)} />
+                        </div>)}
                       {!selectedAnamneseTemplate.questions?.length &&
                         <p className="muted">Este modelo ainda não tem perguntas. Configure-o em Configurações.</p>}
                     </div>
