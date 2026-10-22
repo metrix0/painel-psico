@@ -19,7 +19,9 @@ export default function InstrumentDelivery({ instrument, hasForm, sessions, busy
   }, [showResponses]);
   const form = instrumentForm(instrument);
   const sentSessionId = instrument.sent_at ? (instrument.sent_session_id || '') : (sendingSession || sessions[0]?.id || '');
-  const receivedSessionId = receivingSession || sessions[0]?.id || '';
+  const receivedSessionId = instrument.received_at
+    ? (instrument.received_session_id || '')
+    : (receivingSession || sessions[0]?.id || '');
   const sessionOptions = sessions.map(s => <option key={s.id} value={s.id}>{s.title || 'Sessão'} — {s.occurred_on?.split('-').reverse().join('/')}</option>);
 
   return <div className="instrument-delivery">
@@ -44,11 +46,16 @@ export default function InstrumentDelivery({ instrument, hasForm, sessions, busy
         aria-label={"Ver resultados do formulário recebido em " + deliveryDate(form.submitted_at)}
         onClick={() => setShowResponses(true)}>Ver resultados</button>}
     </div>}
-    {instrument.sent_at && !instrument.received_at && <div className="instrument-receive-row">
-      <label className="field"><span>Sessão de recebimento</span><select aria-label="Sessão de recebimento" value={receivedSessionId} disabled={busy} onChange={e => setReceivingSession(e.target.value)}>
+    {instrument.sent_at && <div className="instrument-receive-row">
+      <label className="field"><span>Sessão de recebimento</span><select aria-label="Sessão de recebimento" value={receivedSessionId} disabled={busy}
+        onChange={e => instrument.received_at
+          ? onAction(instrument.id, 'set_received_session', e.target.value)
+          : setReceivingSession(e.target.value)}>
+        <option value="" disabled>Selecione uma sessão</option>
         {sessionOptions}
       </select></label>
-      <button className="btn" disabled={busy || !receivedSessionId} onClick={() => onAction(instrument.id, 'receive', receivedSessionId)}>Marcar como recebido</button>
+      {!instrument.received_at && <button className="btn" disabled={busy || !receivedSessionId}
+        onClick={() => onAction(instrument.id, 'receive', receivedSessionId)}>Marcar como recebido</button>}
     </div>}
     {hasForm && !form && !instrument.received_at && <button className="btn soft" disabled={busy} onClick={() => onAction(instrument.id, 'generate')}>Gerar formulário</button>}
     {form?.submitted_at ? null
