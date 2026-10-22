@@ -4,7 +4,6 @@ export default function ReportSettings({settings,onChange,status}){
     <p className="muted">Modelo baseado na estrutura dos laudos fornecidos: identificação, demanda, procedimento, resultado e análise, conclusão e encaminhamento. A geração usa GPT-6.1 Sol e todos os registros clínicos do paciente.</p>
     {!settings?<p role="status">Carregando configuração…</p>:<>
       <div className="fields">{[['professional_name','Nome da profissional'],['crp','CRP'],['city','Cidade'],['title','Título do documento']].map(([key,label])=><label className="field" key={key}><span>{label}</span><input value={settings[key]} onChange={e=>onChange({...settings,[key]:e.target.value})}/></label>)}</div>
-      <label className="field"><span>Validade e finalidade (opcional)</span><input value={settings.validity} onChange={e=>onChange({...settings,validity:e.target.value})}/></label>
     </>}
   </div></section>;
 }
