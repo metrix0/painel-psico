@@ -26,14 +26,18 @@ const paths = {
     <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-1.6 1.6-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.52V20h-2.3v-.09a1.65 1.65 0 0 0-1-1.52 1.65 1.65 0 0 0-1.82.33l-.06.06-1.6-1.6.06-.06A1.65 1.65 0 0 0 8.92 15a1.65 1.65 0 0 0-1.52-1H7.3v-2.3h.09a1.65 1.65 0 0 0 1.52-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06 1.6-1.6.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.52V6h2.3v.09a1.65 1.65 0 0 0 1 1.52 1.65 1.65 0 0 0 1.82-.33l.06-.06 1.6 1.6-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.52 1H21v2.3h-.09a1.65 1.65 0 0 0-1.52 1Z" transform="translate(-2 -1)" />
   </>,
+  "triangle-alert": <>
+    <path d="M10.3 3.9 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+    <path d="M12 9v4M12 17h.01" />
+  </>,
   "log-out": <>
     <path d="M10 17l5-5-5-5M15 12H3" />
     <path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6" />
   </>
 };
 
-export default function SidebarIcon({ name }) {
-  return <svg className="sidebar-nav-icon" xmlns="http://www.w3.org/2000/svg"
+export default function SidebarIcon({ name, className = "sidebar-nav-icon" }) {
+  return <svg className={className} xmlns="http://www.w3.org/2000/svg"
     width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
     focusable="false">
