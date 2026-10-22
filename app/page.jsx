@@ -14,6 +14,8 @@ import ReportPanel from "../components/ReportPanel";
 import ReportSettings from "../components/ReportSettings";
 import DatePicker from "../components/DatePicker";
 import AgendaPanel from "../components/AgendaPanel";
+import AgendaSettings from "../components/AgendaSettings";
+import { DEFAULT_AGENDA_SLOTS, normalizeAgendaSlots } from "../lib/agendaSettings.mjs";
 import { DEFAULT_REPORT_SETTINGS } from "../supabase/functions/_shared/reportCore.mjs";
 import { deliveryDate, instrumentForm, waitingInSession } from "../lib/instrumentDelivery.mjs";
 
@@ -197,6 +199,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [patients, setPatients] = useState([]);
   const [agendaSessions, setAgendaSessions] = useState([]);
+  const [agendaSlots, setAgendaSlots] = useState(DEFAULT_AGENDA_SLOTS);
+  const [agendaSettingsLoading, setAgendaSettingsLoading] = useState(true);
   const [agendaLoading, setAgendaLoading] = useState(false);
   const [agendaError, setAgendaError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -400,6 +404,46 @@ export default function Home() {
       setReportSettings(settings);
     }
     void loadReportSettings();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !supabase) {
+      setAgendaSlots(DEFAULT_AGENDA_SLOTS);
+      setAgendaSettingsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAgendaSettingsLoading(true);
+    async function loadAgendaSettings() {
+      try {
+        let { data, error } = await supabase.from("psico_agenda_settings")
+          .select("slots").eq("id", user.id).maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          const inserted = await supabase.from("psico_agenda_settings")
+            .upsert({id: user.id, slots: DEFAULT_AGENDA_SLOTS},
+              {onConflict: "id", ignoreDuplicates: true}).select("slots").maybeSingle();
+          if (inserted.error) throw inserted.error;
+          data = inserted.data;
+          if (!data) {
+            const retrieved = await supabase.from("psico_agenda_settings")
+              .select("slots").eq("id", user.id).single();
+            if (retrieved.error) throw retrieved.error;
+            data = retrieved.data;
+          }
+        }
+        if (cancelled) return;
+        const slots = normalizeAgendaSlots(data?.slots);
+        autosave.register("agenda_settings:" + user.id, {slots});
+        setAgendaSlots(slots);
+      } catch (error) {
+        if (!cancelled) setNotice("Não foi possível carregar os horários da agenda: " + (error?.message || "erro desconhecido"));
+      } finally {
+        if (!cancelled) setAgendaSettingsLoading(false);
+      }
+    }
+    void loadAgendaSettings();
     return () => { cancelled = true; };
   }, [user?.id]);
 
@@ -1060,11 +1104,16 @@ export default function Home() {
           </div>}
 
           {tab === "agenda" ? <AgendaPanel patients={patients} sessions={agendaSessions}
-            patientPhotoUrls={patientPhotoUrls} loading={agendaLoading} error={agendaError}
+            schedule={agendaSlots} patientPhotoUrls={patientPhotoUrls} loading={agendaLoading || agendaSettingsLoading} error={agendaError}
             onOpenPatient={id => void selectPatient(id)} />
           : tab === "configuracoes" ? <div className="settings-page">
             <div className="hero"><h1>Configurações</h1></div>
             <div className="content-stack">
+              <AgendaSettings slots={agendaSlots} loading={agendaSettingsLoading}
+                onChange={slots => {
+                  setAgendaSlots(slots);
+                  autosave.track("agenda_settings:" + user.id, {slots});
+                }} />
               <section className="card">
                 <div className="cardhead">
                   <h2>Configurar Anamneses</h2>

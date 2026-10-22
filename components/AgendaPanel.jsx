@@ -5,6 +5,7 @@ import {
   addDays, agendaWeek, appointmentTime, formatAgendaDate,
   localISO, patientAgenda, weekStart
 } from "../lib/agenda.mjs";
+import { hourFromTime, hourLabel, slotHoursForDate } from "../lib/agendaSettings.mjs";
 
 const STATUS_LABEL = {
   realizada: "Realizada",
@@ -64,7 +65,7 @@ function PatientAppointment({ entry, photoUrl, onOpen }) {
   </article>;
 }
 
-export default function AgendaPanel({ patients, sessions, patientPhotoUrls, onOpenPatient, loading, error }) {
+export default function AgendaPanel({ patients, sessions, schedule, patientPhotoUrls, onOpenPatient, loading, error }) {
   const [monday, setMonday] = useState(() => weekStart(localISO()));
   const [filter, setFilter] = useState("");
   const days = agendaWeek(patients, sessions, monday);
@@ -72,7 +73,7 @@ export default function AgendaPanel({ patients, sessions, patientPhotoUrls, onOp
   const shownDays = days.map(day => ({
     ...day,
     appointments: day.appointments.filter(entry => entry.patient.name.toLocaleLowerCase("pt-BR").includes(normalized))
-  })).filter(day => day.appointments.length > 0);
+  }));
   const displayed = new Set(shownDays.flatMap(day => day.appointments.map(entry => entry.patient.id)));
   const unscheduled = patients.filter(patient => !patient.anamnese?.consulta_data || !appointmentTime(patient))
     .filter(patient => !displayed.has(patient.id) && patient.name.toLocaleLowerCase("pt-BR").includes(normalized));
@@ -96,19 +97,37 @@ export default function AgendaPanel({ patients, sessions, patientPhotoUrls, onOp
     {error && <p className="notification save-error" role="alert">Não foi possível carregar as sessões da agenda: {error}</p>}
     {!loading && !error && <>
       <p className="agenda-count">{appointmentsCount} {appointmentsCount === 1 ? "consulta" : "consultas"} nesta semana</p>
-      {shownDays.length === 0 && <div className="card"><div className="cardbody muted">Nenhuma consulta nesta semana. Use as setas para navegar entre as semanas.</div></div>}
       <div className="agenda-days">
-        {shownDays.map(day => <section className="agenda-day card" key={day.date}>
-          <div className="agenda-day-header">
-            <h2>{formatAgendaDate(day.date, { weekday: "long", day: "2-digit", month: "long" })}</h2>
-            <span>{day.appointments.length} {day.appointments.length === 1 ? "consulta" : "consultas"}</span>
-          </div>
-          <div className="agenda-day-list">
-            {day.appointments.map(entry => <PatientAppointment
-              key={entry.patient.id + ":" + day.date} entry={entry}
-              photoUrl={patientPhotoUrls[entry.patient.id]} onOpen={onOpenPatient} />)}
-          </div>
-        </section>)}
+        {shownDays.map(day => {
+          const configured = slotHoursForDate(schedule, day.date);
+          const occupiedHours = day.appointments.map(entry => hourFromTime(entry.info.time)).filter(hour => hour !== null);
+          const hours = [...new Set([...configured, ...occupiedHours])].sort((a, b) => a - b);
+          return <section className="agenda-day card" key={day.date}>
+            <div className="agenda-day-header">
+              <h2>{formatAgendaDate(day.date, { weekday: "long", day: "2-digit", month: "long" })}</h2>
+              <span>{day.appointments.length} {day.appointments.length === 1 ? "consulta" : "consultas"}</span>
+            </div>
+            <div className="agenda-day-list">
+              {!hours.length && <div className="agenda-no-hours">Sem horários de atendimento configurados.</div>}
+              {hours.map(hour => {
+                const scheduled = configured.includes(hour);
+                const entries = day.appointments.filter(entry => hourFromTime(entry.info.time) === hour);
+                return <div className="agenda-hour-block" key={hour}>
+                  <div className="agenda-hour-label">
+                    <strong>{hourLabel(hour)}</strong>
+                    {!scheduled && <small>Fora do horário</small>}
+                  </div>
+                  <div className="agenda-hour-content">
+                    {entries.length
+                      ? entries.map(entry => <PatientAppointment key={entry.patient.id + ":" + day.date}
+                          entry={entry} photoUrl={patientPhotoUrls[entry.patient.id]} onOpen={onOpenPatient} />)
+                      : <span className="agenda-empty-slot">Vazio</span>}
+                  </div>
+                </div>;
+              })}
+            </div>
+          </section>;
+        })}
       </div>
       {unscheduled.length > 0 && <section className="agenda-unplanned card">
         <div className="agenda-day-header"><h2>Sem dia ou horário definido</h2><span>{unscheduled.length} pacientes</span></div>
