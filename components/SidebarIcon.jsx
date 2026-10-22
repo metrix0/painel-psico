@@ -6,6 +6,10 @@ const paths = {
     <rect x="3" y="4" width="18" height="18" rx="2" />
     <path d="M8 2v4M16 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
   </>,
+  "user-round": <>
+    <circle cx="12" cy="8" r="5" />
+    <path d="M20 21a8 8 0 0 0-16 0" />
+  </>,
   "message-circle": <>
     <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
     <path d="M8 10h8M8 14h5" />
