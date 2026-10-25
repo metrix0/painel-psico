@@ -651,3 +651,8 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 .instrument-template-entry{padding:0;display:block;overflow:hidden}
 .instrument-template-entry .session-details{display:flex;flex-direction:column;gap:12px}
 .instrument-template-entry .session-details>.btn,.instrument-template-entry .session-details>.text-btn{align-self:flex-start}
+
+/* Anamnese template editor reuses the existing collapsed session headers. */
+.anamnese-template-entry{min-width:0}
+.anamnese-template-entry>.session-details{padding:16px;display:block}
+.anamnese-template-entry .anamnese-template-editor{width:100%;min-width:0}

@@ -367,8 +367,7 @@ export default function Home() {
       const rows = data || [];
       rows.forEach(template => autosave.register("anamnese_template:" + template.id, anamneseTemplatePayload(template)));
       setAnamneseTemplates(rows);
-      setEditingTemplateId(prev => rows.some(t => t.id === prev && !t.archived)
-        ? prev : (rows.find(t => !t.archived)?.id || null));
+      setEditingTemplateId(prev => rows.some(t => t.id === prev && !t.archived) ? prev : null);
     }
     void loadTemplates();
     return () => { cancelled = true; };
@@ -812,8 +811,7 @@ export default function Home() {
       .update({ archived: true }).eq("id", id);
     if (error) { setNotice(error.message); return; }
     setAnamneseTemplates(prev => prev.map(t => t.id === id ? { ...t, archived: true } : t));
-    setEditingTemplateId(prev => prev === id
-      ? anamneseTemplates.find(t => !t.archived && t.id !== id)?.id || null : prev);
+    setEditingTemplateId(prev => prev === id ? null : prev);
   }
 
   async function selectAnamneseTemplate(id) {
@@ -1194,11 +1192,6 @@ export default function Home() {
           : tab === "configuracoes" ? <div className="settings-page">
             <div className="hero"><h1>Configurações</h1></div>
             <div className="content-stack">
-              <AgendaSettings slots={agendaSlots} loading={agendaSettingsLoading}
-                onChange={slots => {
-                  setAgendaSlots(slots);
-                  autosave.track("agenda_settings:" + user.id, {slots});
-                }} />
               <section className="card">
                 <div className="cardhead">
                   <h2>Configurar Anamneses</h2>
@@ -1209,18 +1202,27 @@ export default function Home() {
                   <p className="muted">Crie um modelo com perguntas personalizadas. Cada paciente pode utilizar um modelo diferente. Alterações salvas automaticamente.</p>
                   {anamneseTemplatesLoading ? <p className="muted">Carregando modelos…</p>
                     : <div className="anamnese-template-layout">
-                      {anamneseTemplates.filter(template => !template.archived).length > 1 && (
-                        <label className="field anamnese-template-picker"><span>Selecionar modelo</span>
-                          <select value={editingTemplateId || ""} onChange={event => setEditingTemplateId(event.target.value)}>
-                            {anamneseTemplates.filter(template => !template.archived).map(template => (
-                              <option key={template.id} value={template.id}>{template.name || "Modelo sem nome"}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
                       {!anamneseTemplates.some(template => !template.archived) &&
                         <span className="muted">Nenhum modelo criado.</span>}
-                      {editingAnamneseTemplate && <div className="anamnese-template-editor" key={editingAnamneseTemplate.id}>
+                      {anamneseTemplates.filter(template => !template.archived).map(template => <div className="instrument-entry instrument-template-entry anamnese-template-entry" key={template.id}>
+                        <button type="button" className={"session-summary" + (editingTemplateId === template.id ? " is-open" : "")}
+                          aria-expanded={editingTemplateId === template.id}
+                          aria-controls={"anamnese-template-details-" + template.id}
+                          onClick={() => setEditingTemplateId(prev => prev === template.id ? null : template.id)}>
+                          <span className="session-summary-main">
+                            <strong>{template.name || "Modelo sem nome"}</strong>
+                            <span className="session-summary-meta">{(template.questions || []).length} perguntas</span>
+                          </span>
+                          <span className="session-summary-toggle" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
+                          </span>
+                        </button>
+                        {editingTemplateId === template.id && editingAnamneseTemplate &&
+                          <div id={"anamnese-template-details-" + template.id} className="session-details">
+                            <div className="anamnese-template-editor">
                         <div className="anamnese-template-heading">
                           <InputField label="Nome do modelo" value={editingAnamneseTemplate.name}
                             onChange={value => editAnamneseTemplate(editingAnamneseTemplate.id, template =>
@@ -1260,7 +1262,9 @@ export default function Home() {
                         ))}
                         <button type="button" className="btn soft"
                           onClick={() => addAnamneseQuestion(editingAnamneseTemplate.id)}>+ Adicionar pergunta</button>
-                      </div>}
+                            </div>
+                          </div>}
+                      </div>)}
                     </div>}
                 </div>
               </section>
@@ -1333,6 +1337,11 @@ export default function Home() {
                   </div>)}
                 </div>
               </section>
+              <AgendaSettings slots={agendaSlots} loading={agendaSettingsLoading}
+                onChange={slots => {
+                  setAgendaSlots(slots);
+                  autosave.track("agenda_settings:" + user.id, {slots});
+                }} />
               <ReportSettings settings={reportSettings} status={saveLabel} onChange={settings => {
                 setReportSettings(settings);
                 autosave.track("report_settings:" + user.id, {settings});
