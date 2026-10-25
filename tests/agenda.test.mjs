@@ -81,7 +81,7 @@ test("non-repeating dates can use any half-hour and never create weekly ghost sl
   const nextWeek = agendaWeek([irregular], [], "2026-10-26", clock);
   assert.equal(nextWeek.flatMap(day => day.appointments).length, 0);
   assert.equal(patientAgenda(irregular, [], clock).next, "2026-10-22");
-  assert.equal(agendaWeek([irregular], [makeSession(1, "2026-10-23")], "2026-10-19", clock)[4].appointments[0].time, "");
+  assert.equal(agendaWeek([irregular], [{ ...makeSession(1, "2026-10-23"), patient_id: "p3" }], "2026-10-19", clock)[4].appointments[0].time, "");
 });
 test("two sessions on same day show separately and unscheduled times appear last", () => {
   const irregular = { id: "p4", name: "Vera", anamnese: {
