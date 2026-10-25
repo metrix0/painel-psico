@@ -58,3 +58,50 @@ test("appointment times use only the selected weekday slots in whole-hour increm
   assert.deepEqual(slotHoursForDate(slots, "2026-10-27").map(hourLabel), ["09:00", "11:00"]);
   assert.equal(slotHoursForDate({"1": []}, "2026-10-26").length, 0);
 });
+
+test("non-repeating dates can use any half-hour and never create weekly ghost slots", async () => {
+  const { HALF_HOUR_TIMES, plannedAppointments } = await import("../lib/appointmentSchedule.mjs");
+  assert.equal(HALF_HOUR_TIMES.length, 48);
+  assert.equal(HALF_HOUR_TIMES[0], "00:00");
+  assert.equal(HALF_HOUR_TIMES[19], "09:30");
+  assert.equal(HALF_HOUR_TIMES[47], "23:30");
+  const irregular = { id: "p3", name: "Irregular", anamnese: {
+    horario_nao_repete: true, consulta_data: "2026-10-19", consulta_horario: "08:00",
+    sessoes_agendadas: [
+      { id: "a", data: "2026-10-20", horario: "09:30" },
+      { id: "b", data: "2026-10-22", horario: "" },
+      { id: "draft", data: "", horario: "16:00" }
+    ]
+  } };
+  assert.equal(plannedAppointments(irregular).length, 2);
+  const week = agendaWeek([irregular], [], "2026-10-19", clock);
+  assert.deepEqual(week.map(day => day.appointments.length), [0, 1, 0, 1, 0, 0, 0]);
+  assert.equal(week[1].appointments[0].time, "09:30");
+  assert.equal(week[3].appointments[0].time, "");
+  const nextWeek = agendaWeek([irregular], [], "2026-10-26", clock);
+  assert.equal(nextWeek.flatMap(day => day.appointments).length, 0);
+  assert.equal(patientAgenda(irregular, [], clock).next, "2026-10-22");
+  assert.equal(agendaWeek([irregular], [makeSession(1, "2026-10-23")], "2026-10-19", clock)[4].appointments[0].time, "");
+});
+test("two sessions on same day show separately and unscheduled times appear last", () => {
+  const irregular = { id: "p4", name: "Vera", anamnese: {
+    horario_nao_repete: true,
+    sessoes_agendadas: [
+      { id: "1", data: "2026-10-21", horario: "10:30" },
+      { id: "2", data: "2026-10-21", horario: "" },
+      { id: "3", data: "2026-10-21", horario: "08:00" }
+    ]
+  } };
+  const appointments = agendaWeek([irregular], [], "2026-10-19", clock)[2].appointments;
+  assert.deepEqual(appointments.map(a => a.time), ["08:00", "10:30", ""]);
+  assert.equal(new Set(appointments.map(a => a.key)).size, 3);
+});
+test("legacy weekly appointment stays unchanged when irregular flag is absent or false", () => {
+  const off = { ...patient, anamnese: {
+    ...patient.anamnese, horario_nao_repete: false,
+    sessoes_agendadas: [{ id: "ignore", data: "2026-10-20", horario: "09:30" }]
+  } };
+  const week = agendaWeek([off], [], "2026-10-19", clock);
+  assert.deepEqual(week.map(day => day.appointments.length), [0, 0, 1, 0, 0, 0, 0]);
+  assert.equal(week[2].appointments[0].time, "09:00");
+});

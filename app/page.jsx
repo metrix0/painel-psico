@@ -23,6 +23,7 @@ import {
   normalizeAgendaSlots, slotHoursForDate, weekdayFromConsultationDate
 } from "../lib/agendaSettings.mjs";
 import { localISO } from "../lib/agenda.mjs";
+import { HALF_HOUR_TIMES, nonRepeating, plannedAppointments } from "../lib/appointmentSchedule.mjs";
 import { DEFAULT_REPORT_SETTINGS } from "../supabase/functions/_shared/reportCore.mjs";
 import { deliveryDate, instrumentForm, waitingInSession } from "../lib/instrumentDelivery.mjs";
 
@@ -759,6 +760,33 @@ export default function Home() {
     autosave.track("patient:" + selectedId, patientPayload(next));
   }
 
+  function setNonRepeatingSchedule(enabled) {
+    const current = form.anamnese || {};
+    const existing = Array.isArray(current.sessoes_agendadas) ? current.sessoes_agendadas : [];
+    const firstDate = current.consulta_data
+      ? nextConsultationDateForWeekday(weekdayFromConsultationDate(current.consulta_data), localISO())
+      : "";
+    const initial = existing.length ? existing : [{
+      id: crypto.randomUUID(),
+      data: firstDate,
+      horario: HALF_HOUR_TIMES.includes(current.consulta_horario) ? current.consulta_horario : ""
+    }];
+    const next = { ...form, anamnese: {
+      ...current, horario_nao_repete: enabled,
+      sessoes_agendadas: enabled ? initial : existing
+    } };
+    setForm(next);
+    autosave.track("patient:" + selectedId, patientPayload(next));
+  }
+
+  function changePlannedAppointments(transform) {
+    const current = form.anamnese || {};
+    const list = Array.isArray(current.sessoes_agendadas) ? current.sessoes_agendadas : [];
+    const next = { ...form, anamnese: { ...current, sessoes_agendadas: transform(list) } };
+    setForm(next);
+    autosave.track("patient:" + selectedId, patientPayload(next));
+  }
+
   async function archivePatient() {
     if (!form || busy || !window.confirm("Arquivar " + form.name + "? O paciente não aparecerá na busca nem na agenda, mas seus dados serão preservados.")) return;
     if (!await autosave.flushAll()) { setNotice("Há alterações que não foram salvas."); return; }
@@ -1195,7 +1223,9 @@ export default function Home() {
   const selectedAnswers = anamnese.template_answers?.[form?.anamnese_template_id] || {};
   const complete = instruments.filter(i => i.status === "Concluído").length;
   const consultationWeekday = weekdayFromConsultationDate(anamnese.consulta_data || "");
-  const sessionSchedule = consultationWeekday === "" ? "—"
+  const sessionSchedule = nonRepeating(form)
+    ? `${plannedAppointments(form).length} agendada(s) · Sem repetição`
+    : consultationWeekday === "" ? "—"
     : `${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][Number(consultationWeekday)]} · ${consultationTime || "—"}`;
 
   return (
@@ -1491,27 +1521,56 @@ export default function Home() {
                 <div className="cardbody fields">
                   <InputField label="Nome" value={form.name} onChange={v => setField("name", v)} />
                   <InputField label="Data de nascimento" type="date" value={form.birth_date} onChange={v => setField("birth_date", v)} />
-                  <div className="consultation-datetime">
-                    <label className="field"><span>Dia da consulta</span>
-                      <select aria-label="Dia da consulta" value={weekdayFromConsultationDate(anamnese.consulta_data || "")}
-                        onChange={e => setConsultationWeekday(e.target.value)}>
-                        <option value="">Selecione o dia da semana</option>
-                        {AGENDA_WEEKDAYS.map(([day, label]) =>
-                          <option key={day} value={String(day)}>{label}</option>)}
-                      </select>
+                  <div className="consultation-schedule">
+                    <label className="schedule-repeat-toggle">
+                      <input type="checkbox" checked={nonRepeating(form)}
+                        onChange={e => setNonRepeatingSchedule(e.target.checked)} />
+                      <span>Horário não repete</span>
                     </label>
-                    <label className="field"><span>Horário da consulta</span>
-                      <select aria-label="Horário da consulta" value={consultationTime}
-                        disabled={agendaSettingsLoading || !anamnese.consulta_data || !consultationHours.length}
-                        onChange={e => setAnamnese("consulta_horario", e.target.value)}>
-                        <option value="">{agendaSettingsLoading ? "Carregando horários…"
-                          : !anamnese.consulta_data ? "Selecione o dia"
-                          : consultationHours.length ? "Selecione o horário" : "Sem horários disponíveis"}</option>
-                        {consultationTime && !consultationTimeConfigured &&
-                          <option value={consultationTime}>{consultationTime} (fora da agenda)</option>}
-                        {consultationHours.map(hour => <option key={hour} value={hourLabel(hour)}>{hourLabel(hour)}</option>)}
-                      </select>
-                    </label>
+                    {nonRepeating(form) ? <div className="oneoff-schedule">
+                      {(Array.isArray(anamnese.sessoes_agendadas) ? anamnese.sessoes_agendadas : []).map((slot, index) =>
+                        <div className="oneoff-schedule-row" key={slot.id || index}>
+                          <InputField label={"Dia da sessão " + (index + 1)} type="date" value={slot.data || ""}
+                            onChange={data => changePlannedAppointments(rows =>
+                              rows.map((row, i) => i === index ? { ...row, data } : row))} />
+                          <label className="field"><span>Horário</span>
+                            <select aria-label={"Horário da sessão " + (index + 1)} value={slot.horario || ""}
+                              onChange={event => changePlannedAppointments(rows =>
+                                rows.map((row, i) => i === index ? { ...row, horario: event.target.value } : row))}>
+                              <option value="">Sem horário</option>
+                              {HALF_HOUR_TIMES.map(time => <option key={time} value={time}>{time}</option>)}
+                            </select>
+                          </label>
+                          <button type="button" className="btn oneoff-remove"
+                            aria-label={"Remover sessão agendada " + (index + 1)}
+                            onClick={() => changePlannedAppointments(rows => rows.filter((_, i) => i !== index))}>Remover</button>
+                        </div>)}
+                      <button type="button" className="btn soft oneoff-add"
+                        onClick={() => changePlannedAppointments(rows => [...rows, {
+                          id: crypto.randomUUID(), data: "", horario: ""
+                        }])}>+ Adicionar sessão</button>
+                    </div> : <div className="consultation-datetime">
+                      <label className="field"><span>Dia da sessão</span>
+                        <select aria-label="Dia da sessão" value={weekdayFromConsultationDate(anamnese.consulta_data || "")}
+                          onChange={e => setConsultationWeekday(e.target.value)}>
+                          <option value="">Selecione o dia da semana</option>
+                          {AGENDA_WEEKDAYS.map(([day, label]) =>
+                            <option key={day} value={String(day)}>{label}</option>)}
+                        </select>
+                      </label>
+                      <label className="field"><span>Horário</span>
+                        <select aria-label="Horário da sessão" value={consultationTime}
+                          disabled={agendaSettingsLoading || !anamnese.consulta_data || !consultationHours.length}
+                          onChange={e => setAnamnese("consulta_horario", e.target.value)}>
+                          <option value="">{agendaSettingsLoading ? "Carregando horários…"
+                            : !anamnese.consulta_data ? "Selecione o dia"
+                            : consultationHours.length ? "Selecione o horário" : "Sem horários disponíveis"}</option>
+                          {consultationTime && !consultationTimeConfigured &&
+                            <option value={consultationTime}>{consultationTime} (fora da agenda)</option>}
+                          {consultationHours.map(hour => <option key={hour} value={hourLabel(hour)}>{hourLabel(hour)}</option>)}
+                        </select>
+                      </label>
+                    </div>}
                   </div>
                   <InputField label="Escolaridade" value={form.grade} onChange={v => setField("grade", v)} />
                   <InputField label="Escola" value={form.school} onChange={v => setField("school", v)} />
