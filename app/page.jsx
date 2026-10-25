@@ -54,6 +54,10 @@ const formatDate = (value) => {
   return parts.length === 3 ? parts[2] + "/" + parts[1] + "/" + parts[0] : value;
 };
 
+function isAnamneseDateQuestion(question) {
+  return /^data d[ae] entrevista\s*[:?]?$/i.test(String(question?.label || "").trim().replace(/\s+/g," "));
+}
+function visibleAnamneseQuestions(questions) { return (questions || []).filter(q => !isAnamneseDateQuestion(q)); }
 function formatAge(birthDate) {
   if (!birthDate) return null;
   const [year, month, day] = birthDate.split("-").map(Number);
@@ -219,6 +223,8 @@ export default function Home() {
   const [sessionFields, setSessionFields] = useState([]);
   const [sessionFieldsLoading, setSessionFieldsLoading] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState({});
+  const [expandedInstruments, setExpandedInstruments] = useState({});
+  const [showArchivedPatients, setShowArchivedPatients] = useState(false);
   const [expandedInstrumentTemplates, setExpandedInstrumentTemplates] = useState({});
   const [instruments, setInstruments] = useState([]);
   const [reportSettings, setReportSettings] = useState(null);
@@ -344,7 +350,7 @@ export default function Home() {
       setPatients(rows);
       const recent = [...rows].sort((a, b) =>
         Date.parse(b.last_visited_at || b.created_at) - Date.parse(a.last_visited_at || a.created_at));
-      setSelectedId(prev => rows.some(p => p.id === prev) ? prev : (recent[0]?.id || null));
+      setSelectedId(prev => rows.some(p => p.id === prev && !p.archived_at) ? prev : (recent.find(p => !p.archived_at)?.id || null));
     }
     load();
     return () => { cancelled = true; };
@@ -506,6 +512,7 @@ export default function Home() {
         for (const instrument of i.data || []) autosave.register("instrument:" + instrument.id, instrumentPayload(instrument));
         setSessions(s.data || []);
         setExpandedSessions((s.data || []).length ? { [s.data[0].id]: true } : {});
+        setExpandedInstruments({});
         setInstruments(i.data || []);
       }
     }
@@ -724,6 +731,37 @@ export default function Home() {
     };
     setForm(next);
     autosave.track("patient:" + selectedId, patientPayload(next));
+  }
+
+  async function archivePatient() {
+    if (!form || busy || !window.confirm("Arquivar " + form.name + "? O paciente não aparecerá na busca nem na agenda, mas seus dados serão preservados.")) return;
+    if (!await autosave.flushAll()) { setNotice("Há alterações que não foram salvas."); return; }
+    setBusy(true);
+    const { data, error } = await supabase.from("psico_patients")
+      .update({ archived_at: new Date().toISOString() }).eq("id", form.id).select("id, archived_at").single();
+    if (error || !data) setNotice("Não foi possível arquivar: " + (error?.message || "registro não atualizado"));
+    else {
+      setPatients(prev => prev.map(p => p.id === form.id ? { ...p, archived_at: data.archived_at } : p));
+      setSelectedId(null);
+      setTab("configuracoes");
+      setShowArchivedPatients(true);
+      setNotice("Paciente arquivado.");
+    }
+    setBusy(false);
+  }
+
+  async function restorePatient() {
+    if (!form || busy || !window.confirm("Restaurar " + form.name + " para os pacientes ativos?")) return;
+    if (!await autosave.flushAll()) { setNotice("Há alterações que não foram salvas."); return; }
+    setBusy(true);
+    const { data, error } = await supabase.from("psico_patients")
+      .update({ archived_at: null }).eq("id", form.id).select("id, archived_at").single();
+    if (error || !data) setNotice("Não foi possível restaurar: " + (error?.message || "registro não atualizado"));
+    else {
+      setPatients(prev => prev.map(p => p.id === form.id ? { ...p, archived_at: null } : p));
+      setNotice("Paciente restaurado.");
+    }
+    setBusy(false);
   }
 
   async function deletePatient() {
@@ -1099,9 +1137,12 @@ export default function Home() {
     </div>
   );
 
+  const activePatients = patients.filter(p => !p.archived_at);
+  const archivedPatients = patients.filter(p => Boolean(p.archived_at))
+    .sort((a,b) => Date.parse(b.archived_at) - Date.parse(a.archived_at));
   const listed = search.trim()
-    ? patients.filter(p => p.name.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR")))
-    : [...patients]
+    ? activePatients.filter(p => p.name.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR")))
+    : [...activePatients]
         .sort((a, b) => Date.parse(b.last_visited_at || b.created_at) -
                         Date.parse(a.last_visited_at || a.created_at))
         .slice(0, 3);
@@ -1186,7 +1227,7 @@ export default function Home() {
             </form>
           </div>}
 
-          {tab === "agenda" ? <AgendaPanel patients={patients} sessions={agendaSessions}
+          {tab === "agenda" ? <AgendaPanel patients={activePatients} sessions={agendaSessions.filter(s => activePatients.some(p => p.id === s.patient_id))}
             schedule={agendaSlots} patientPhotoUrls={patientPhotoUrls} loading={agendaLoading || agendaSettingsLoading} error={agendaError}
             onOpenPatient={id => void selectPatient(id)} />
           : tab === "configuracoes" ? <div className="settings-page">
@@ -1347,6 +1388,26 @@ export default function Home() {
                 autosave.track("report_settings:" + user.id, {settings});
               }} />
               <UserAccessSettings user={user} />
+              <section className="card">
+                <div className="cardhead">
+                  <h2>Pacientes arquivados</h2>
+                  <button type="button" className="btn soft" aria-expanded={showArchivedPatients}
+                    onClick={() => setShowArchivedPatients(prev => !prev)}>
+                    {showArchivedPatients ? "Ocultar arquivados" : "Ver arquivados (" + archivedPatients.length + ")"}
+                  </button>
+                </div>
+                {showArchivedPatients && <div className="cardbody archived-patient-list">
+                  {!archivedPatients.length && <p className="muted">Nenhum paciente arquivado.</p>}
+                  {archivedPatients.map(p => <button type="button" className="archived-patient-link" key={p.id}
+                    onClick={() => void selectPatient(p.id)}>
+                    <span className="patient-sidebar-avatar" aria-hidden="true">
+                      {patientPhotoUrls[p.id] ? <img src={patientPhotoUrls[p.id]} alt="" /> : p.name.trim().slice(0,1).toUpperCase()}
+                    </span>
+                    <span>{p.name}</span>
+                    <span className="archived-patient-date">{formatDate(p.archived_at?.slice(0,10))}</span>
+                  </button>)}
+                </div>}
+              </section>
             </div>
           </div> : !form ? <div className="empty-state">
             <h1>Pacientes</h1>
@@ -1427,7 +1488,11 @@ export default function Home() {
               <section className="card">
                 <div className="cardhead"><h2>Anamnese</h2></div>
                 <div className="cardbody">
-                  <label className="field anamnese-type-field"><span>Tipo de anamnese</span>
+                  <div className="anamnese-fixed-date">
+                     <InputField label="Data da anamnese" type="date" value={anamnese.data_entrevista || ""}
+                       onChange={value => setAnamnese("data_entrevista",value)} />
+                   </div>
+                   <label className="field anamnese-type-field"><span>Tipo de anamnese</span>
                     <select value={form.anamnese_template_id || ""} disabled={busy}
                       onChange={event => void selectAnamneseTemplate(event.target.value)}>
                       <option value="">Selecionar modelo</option>
@@ -1490,7 +1555,10 @@ export default function Home() {
                     </p>
                   )}
                   <div className="card-actions">
-                    <button className="btn danger" disabled={busy} onClick={deletePatient}>Excluir paciente</button>
+                    {form.archived_at
+                       ? <button className="btn soft" disabled={busy} onClick={() => void restorePatient()}>Restaurar paciente</button>
+                       : <button className="btn soft" disabled={busy} onClick={() => void archivePatient()}>Arquivar paciente</button>}
+                     <button className="btn danger" disabled={busy} onClick={deletePatient}>Excluir paciente</button>
                   </div>
                 </div>
               </section>
@@ -1515,7 +1583,9 @@ export default function Home() {
                       </svg>
                     </span>
                   </button>
-                  {instruments.some(i => i.sent_session_id === s.id || i.received_session_id === s.id) && <div className="session-instrument-labels">
+                  {(s.occurred_on === anamnese.data_entrevista ||
+                     instruments.some(i => i.sent_session_id === s.id || i.received_session_id === s.id)) && <div className="session-instrument-labels">
+                     {s.occurred_on === anamnese.data_entrevista && <span className="instrument-badge">Anamnese</span>}
                     {instruments.filter(i => i.sent_session_id === s.id).map(i => <span className="instrument-badge" key={i.id + "-sent"}>{i.name} Enviado</span>)}
                     {instruments.filter(i => i.received_session_id === s.id).map(i => <span className="instrument-badge received" key={i.id + "-received"}>{i.name} Recebido</span>)}
                   </div>}
