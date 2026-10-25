@@ -302,12 +302,18 @@ export default function Home() {
     setPatientPhotoUrls({});
     if (!user?.id || !supabase || !patients.length) return;
     const storage = supabase.storage.from("psico-patient-photos");
-    void Promise.all(patients.map(async patient => {
+    const signedPhotos = Promise.all(patients.map(async patient => {
       const path = user.id + "/" + patient.id + "/photo";
       const { data, error } = await storage.createSignedUrl(path, 3600);
       return [patient.id, !error ? data?.signedUrl : null];
-    })).then(entries => {
-      if (active) setPatientPhotoUrls(Object.fromEntries(entries.filter(([, url]) => Boolean(url))));
+    }));
+    const importedPhotos = supabase.from("psico_imported_patient_photos")
+      .select("patient_id,data_uri").eq("owner_id", user.id);
+    void Promise.all([signedPhotos, importedPhotos]).then(([signedEntries, imported]) => {
+      if (!active) return;
+      const fallback = Object.fromEntries((imported.data || []).map(row => [row.patient_id, row.data_uri]));
+      const signed = Object.fromEntries(signedEntries.filter(([, url]) => Boolean(url)));
+      setPatientPhotoUrls({ ...fallback, ...signed });
     });
     return () => { active = false; };
   }, [user?.id, patientIds]);
@@ -336,6 +342,9 @@ export default function Home() {
         upsert: true
       });
       if (uploadError) throw uploadError;
+      // A user-uploaded photo replaces any one-time imported fallback.
+      await supabase.from("psico_imported_patient_photos")
+        .delete().eq("owner_id", user.id).eq("patient_id", patientId);
       const { data, error: urlError } = await bucket.createSignedUrl(path, 3600);
       if (urlError || !data?.signedUrl) throw urlError || new Error("Foto indisponível.");
       setPatientPhotoUrls(prev => ({ ...prev, [patientId]: data.signedUrl + "&v=" + Date.now() }));
@@ -355,8 +364,13 @@ export default function Home() {
       .remove([user.id + "/" + patientId + "/photo"]);
     if (error) setNotice("Não foi possível remover a foto: " + error.message);
     else {
-      setPatientPhotoUrls(prev => { const next = { ...prev }; delete next[patientId]; return next; });
-      setNotice("Foto do paciente removida.");
+      const { error: importedError } = await supabase.from("psico_imported_patient_photos")
+        .delete().eq("owner_id", user.id).eq("patient_id", patientId);
+      if (importedError) setNotice("Não foi possível remover a foto: " + importedError.message);
+      else {
+        setPatientPhotoUrls(prev => { const next = { ...prev }; delete next[patientId]; return next; });
+        setNotice("Foto do paciente removida.");
+      }
     }
     setPhotoUploading(false);
   }
