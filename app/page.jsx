@@ -1673,7 +1673,7 @@ export default function Home() {
                     onClick={() => setExpandedSessions(prev => ({ ...prev, [s.id]: !prev[s.id] }))}>
                     <span className="session-summary-main">
                       <strong>{s.title || "Sessão"}</strong>
-                      <span className="session-summary-meta">{formatDate(s.occurred_on)} · {s.duration_minutes} min</span>
+                      <span className="session-summary-meta">{formatDate(s.occurred_on)} · {s.duration_minutes ? s.duration_minutes + " min" : "Duração não informada"}</span>
                     </span>
                     <span className="session-summary-toggle" aria-hidden="true">
                       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
