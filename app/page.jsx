@@ -1028,6 +1028,7 @@ export default function Home() {
     else {
       autosave.register("instrument:" + data.id, instrumentPayload(data));
       setInstruments(prev => [...prev, data]);
+      setExpandedInstruments(prev => ({ ...prev, [data.id]: true }));
     }
     setBusy(false);
   }
@@ -1070,6 +1071,7 @@ export default function Home() {
     else {
       autosave.forget("instrument:" + id);
       setInstruments(prev => prev.filter(i => i.id !== id));
+      setExpandedInstruments(prev => { const next = { ...prev }; delete next[id]; return next; });
     }
   }
 
@@ -1252,7 +1254,7 @@ export default function Home() {
                           onClick={() => setEditingTemplateId(prev => prev === template.id ? null : template.id)}>
                           <span className="session-summary-main">
                             <strong>{template.name || "Modelo sem nome"}</strong>
-                            <span className="session-summary-meta">{(template.questions || []).length} perguntas</span>
+                            <span className="session-summary-meta">{visibleAnamneseQuestions(template.questions).length} perguntas</span>
                           </span>
                           <span className="session-summary-toggle" aria-hidden="true">
                             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
@@ -1271,10 +1273,10 @@ export default function Home() {
                           <button className="text-btn" type="button"
                             onClick={() => void archiveAnamneseTemplate(editingAnamneseTemplate.id)}>Arquivar modelo</button>
                         </div>
-                        {(editingAnamneseTemplate.questions || []).map((question, index) => (
+                        {visibleAnamneseQuestions(editingAnamneseTemplate.questions).map((question, index) => (
                           <div key={question.id} className="session-field-editor anamnese-question-editor">
                             {question.section && (index === 0 ||
-                              editingAnamneseTemplate.questions[index - 1]?.section !== question.section) &&
+                              visibleAnamneseQuestions(editingAnamneseTemplate.questions)[index - 1]?.section !== question.section) &&
                               <h3 className="anamnese-section-title">{question.section}</h3>}
                             <div className="session-field-config-row">
                               <InputField label={"Pergunta " + (index + 1)} value={question.label}
@@ -1508,10 +1510,10 @@ export default function Home() {
                   </label>
                   {form.anamnese_template_id && selectedAnamneseSnapshot ? (
                     <div className="session-custom-fields anamnese-answers">
-                      {(selectedAnamneseSnapshot.questions || []).map((question, index) =>
+                      {visibleAnamneseQuestions(selectedAnamneseSnapshot.questions).map((question, index) =>
                         <div className="anamnese-question-block" key={question.id}>
                           {question.section && (index === 0 ||
-                            selectedAnamneseSnapshot.questions[index - 1]?.section !== question.section) &&
+                            visibleAnamneseQuestions(selectedAnamneseSnapshot.questions)[index - 1]?.section !== question.section) &&
                             <h3 className="anamnese-section-title">{question.section}</h3>}
                           <QuestionAnswerInput field={question}
                             namePrefix={"anamnese-" + form.id + "-" + selectedAnamneseSnapshot.template_id}
@@ -1540,7 +1542,7 @@ export default function Home() {
                       <details className="anamnese-history" key={id}>
                         <summary>{snapshot.name} · Versão {snapshot.revision} · respostas preservadas</summary>
                         <div className="session-custom-fields">
-                          {(snapshot.questions || []).filter(question =>
+                          {visibleAnamneseQuestions(snapshot.questions).filter(question =>
                             Object.prototype.hasOwnProperty.call(answers, question.id)).map((question, index) =>
                             <div className="anamnese-question-block" key={question.id}>
                               <QuestionAnswerInput field={question} value={answers[question.id]}
@@ -1626,23 +1628,37 @@ export default function Home() {
                 {!templatesLoading && !instrumentTemplates.some(t => !t.archived) && <p className="muted">Cadastre instrumentos em <button className="text-btn" onClick={() => openTab("configuracoes")}>Configurações → Configurar Instrumentos</button>.</p>}
                 {!sessions.length && <p className="muted">Crie uma sessão antes de adicionar um instrumento.</p>}
                 {!instruments.length && <p className="muted">Nenhum instrumento registrado.</p>}
-                {instruments.map(i => <div className="instrument-entry" key={i.id}>
-                  <fieldset className="instrument-fields" disabled={busy}>
-                  <div className="instrument-head">
-                    <div><h3>{i.name}</h3>{i.category && <p className="muted">{i.category}</p>}</div>
-                    {i.received_at ? <div className="field"><span>Status</span><b>Concluído</b></div> : <AnimatedSelect label="Status" value={i.status} options={["Pendente", "Em andamento", "Concluído"]} onChange={v => changeInstrument(i.id, "status", v)} />}
-                  </div>
-                  <label className="field"><span>Sessão</span><select aria-label="Sessão" value={i.session_id || ""} onChange={e => changeInstrument(i.id, "session_id", e.target.value)}>
-                    <option value="" disabled>Selecione uma sessão</option>
-                    {sessions.map(s => <option key={s.id} value={s.id}>{s.title || "Sessão"} — {formatDate(s.occurred_on)}</option>)}
-                  </select></label>
-                  {(i.tables || []).map(table => <InstrumentTable key={table.id} table={table}
-                    onChange={next => changeInstrument(i.id, "tables", i.tables.map(item => item.id === table.id ? next : item))} />)}
-                  <label className="question"><span>Observações</span><textarea aria-label="Observações" value={i.notes || ""} onChange={e => changeInstrument(i.id, "notes", e.target.value)} /></label>
-                  <InstrumentDelivery instrument={i} sessions={sessions} busy={busy} onAction={instrumentAction}
-                    hasForm={Boolean((i.form_questions ?? instrumentTemplates.find(t => t.id === i.template_id)?.form_questions)?.length)} />
-                  <div className="card-actions"><button className="btn danger" onClick={() => void deleteInstrument(i.id)}>Excluir</button></div>
-                  </fieldset>
+                {instruments.map(i => <div className="instrument-entry instrument-template-entry instrument-patient-entry" key={i.id}>
+                  <button type="button" className={"session-summary" + (expandedInstruments[i.id] ? " is-open" : "")}
+                    aria-expanded={!!expandedInstruments[i.id]} aria-controls={"instrument-details-" + i.id}
+                    onClick={() => setExpandedInstruments(prev => ({ ...prev, [i.id]: !prev[i.id] }))}>
+                    <span className="session-summary-main">
+                      <strong>{i.name || "Instrumento"}</strong>
+                      <span className="session-summary-meta">Sessão: {sessions.find(s => s.id === i.session_id)?.title || "Não vinculada"} · {i.received_at ? "Concluído" : i.status || "Pendente"}</span>
+                    </span>
+                    <span className="session-summary-toggle" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                    </span>
+                  </button>
+                  {expandedInstruments[i.id] && <div className="session-details" id={"instrument-details-" + i.id}>
+                    <fieldset className="instrument-fields" disabled={busy}>
+                      <div className="instrument-head">
+                        <div>{i.category && <p className="muted">{i.category}</p>}</div>
+                        {i.received_at ? <div className="field"><span>Status</span><b>Concluído</b></div> : <AnimatedSelect label="Status" value={i.status} options={["Pendente", "Em andamento", "Concluído"]} onChange={v => changeInstrument(i.id, "status", v)} />}
+                      </div>
+                      <label className="field"><span>Sessão</span><select aria-label="Sessão" value={i.session_id || ""} onChange={e => changeInstrument(i.id, "session_id", e.target.value)}>
+                        <option value="" disabled>Selecione uma sessão</option>
+                        {sessions.map(s => <option key={s.id} value={s.id}>{s.title || "Sessão"} — {formatDate(s.occurred_on)}</option>)}
+                      </select></label>
+                      {(i.tables || []).map(table => <InstrumentTable key={table.id} table={table}
+                        onChange={next => changeInstrument(i.id, "tables", i.tables.map(item => item.id === table.id ? next : item))} />)}
+                      <label className="question"><span>Observações</span><textarea aria-label="Observações" value={i.notes || ""} onChange={e => changeInstrument(i.id, "notes", e.target.value)} /></label>
+                      <InstrumentDelivery instrument={i} sessions={sessions} busy={busy} onAction={instrumentAction}
+                        hasForm={Boolean((i.form_questions ?? instrumentTemplates.find(t => t.id === i.template_id)?.form_questions)?.length)} />
+                      <div className="card-actions"><button className="btn danger" onClick={() => void deleteInstrument(i.id)}>Excluir</button></div>
+                    </fieldset>
+                  </div>}
                 </div>)}
               </div>
             </section>}
