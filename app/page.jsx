@@ -54,6 +54,31 @@ const formatDate = (value) => {
   return parts.length === 3 ? parts[2] + "/" + parts[1] + "/" + parts[0] : value;
 };
 
+async function centeredAvatarBlob(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+      element.src = url;
+    });
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error("Imagem inválida.");
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Não foi possível preparar a foto.");
+    const crop = Math.min(image.naturalWidth, image.naturalHeight);
+    ctx.drawImage(image, (image.naturalWidth - crop) / 2, (image.naturalHeight - crop) / 2,
+      crop, crop, 0, 0, 512, 512);
+    return await new Promise((resolve, reject) => canvas.toBlob(blob =>
+      blob ? resolve(blob) : reject(new Error("Não foi possível processar a foto.")), "image/jpeg", 0.88));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 function isAnamneseDateQuestion(question) {
   return /^data d[ae] entrevista\s*[:?]?$/i.test(String(question?.label || "").trim().replace(/\s+/g," "));
 }
@@ -294,8 +319,8 @@ export default function Home() {
       setNotice("Escolha uma foto JPG, PNG ou WebP.");
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setNotice("A foto deve ter até 2 MB.");
+    if (file.size > 15 * 1024 * 1024) {
+      setNotice("A foto deve ter até 15 MB.");
       return;
     }
     const patientId = selectedId;
@@ -303,9 +328,10 @@ export default function Home() {
     setPhotoUploading(true);
     try {
       const bucket = supabase.storage.from("psico-patient-photos");
-      const { error: uploadError } = await bucket.upload(path, file, {
+      const thumbnail = await centeredAvatarBlob(file);
+      const { error: uploadError } = await bucket.upload(path, thumbnail, {
         cacheControl: "60",
-        contentType: file.type,
+        contentType: "image/jpeg",
         upsert: true
       });
       if (uploadError) throw uploadError;
@@ -759,6 +785,7 @@ export default function Home() {
     if (error || !data) setNotice("Não foi possível restaurar: " + (error?.message || "registro não atualizado"));
     else {
       setPatients(prev => prev.map(p => p.id === form.id ? { ...p, archived_at: null } : p));
+      setForm(prev => prev?.id === form.id ? { ...prev, archived_at: null } : prev);
       setNotice("Paciente restaurado.");
     }
     setBusy(false);
