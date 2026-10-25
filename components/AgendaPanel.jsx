@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   addDays, agendaWeek, appointmentTime, formatAgendaDate,
-  localISO, patientAgenda, weekStart
+  isProfessionalAbsence, localISO, patientAgenda, weekStart
 } from "../lib/agenda.mjs";
 import { hourLabel, slotHoursForDate } from "../lib/agendaSettings.mjs";
 import { nonRepeating, plannedAppointments } from "../lib/appointmentSchedule.mjs";
@@ -11,10 +11,17 @@ import { nonRepeating, plannedAppointments } from "../lib/appointmentSchedule.mj
 const STATUS_LABEL = {
   realizada: "Realizada",
   faltou: "Faltou",
+  "profissional-ausente": "Ausência profissional",
   proxima: "Próxima sessão",
   prevista: "Prevista",
   "sem-registro": "Sem registro"
 };
+
+function sessionStatus(session) {
+  if (isProfessionalAbsence(session)) return "profissional-ausente";
+  if (session.occurred_on > localISO()) return "prevista";
+  return session.attendance_status === "faltou" ? "faltou" : "realizada";
+}
 
 function PatientAvatar({ patient, photoUrl, onOpen }) {
   return <button type="button" className="agenda-avatar" onClick={() => onOpen(patient.id)}
@@ -50,8 +57,8 @@ function PatientAppointment({ entry, photoUrl, onOpen }) {
           {info.related.map(session => <div key={session.id} className="agenda-history-entry">
             <span>{formatAgendaDate(session.occurred_on, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
             <strong>{session.title || "Sessão"}</strong>
-            <span className={"agenda-status agenda-status-" + (session.occurred_on > localISO() ? "prevista" : session.attendance_status === "faltou" ? "faltou" : "realizada")}>
-              {session.occurred_on > localISO() ? "Prevista" : session.attendance_status === "faltou" ? "Faltou" : "Realizada"}
+            <span className={"agenda-status agenda-status-" + sessionStatus(session)}>
+              {STATUS_LABEL[sessionStatus(session)]}
             </span>
           </div>)}
         </div>}
