@@ -1531,11 +1531,6 @@ export default function Home() {
                   <InputField label="Nome" value={form.name} onChange={v => setField("name", v)} />
                   <InputField label="Data de nascimento" type="date" value={form.birth_date} onChange={v => setField("birth_date", v)} />
                   <div className="consultation-schedule">
-                    <label className="schedule-repeat-toggle">
-                      <input type="checkbox" checked={nonRepeating(form)}
-                        onChange={e => setNonRepeatingSchedule(e.target.checked)} />
-                      <span>Horário não repete</span>
-                    </label>
                     {nonRepeating(form) ? <div className="oneoff-schedule">
                       {(Array.isArray(anamnese.sessoes_agendadas) ? anamnese.sessoes_agendadas : []).map((slot, index) =>
                         <div className="oneoff-schedule-row" key={slot.id || index}>
@@ -1550,9 +1545,16 @@ export default function Home() {
                               {HALF_HOUR_TIMES.map(time => <option key={time} value={time}>{time}</option>)}
                             </select>
                           </label>
-                          <button type="button" className="btn oneoff-remove"
-                            aria-label={"Remover sessão agendada " + (index + 1)}
-                            onClick={() => changePlannedAppointments(rows => rows.filter((_, i) => i !== index))}>Remover</button>
+                          <div className="oneoff-schedule-actions">
+                            {index === 0 && <label className="schedule-repeat-toggle">
+                              <input type="checkbox" checked={nonRepeating(form)}
+                                onChange={e => setNonRepeatingSchedule(e.target.checked)} />
+                              <span>Horário não repete</span>
+                            </label>}
+                            <button type="button" className="btn oneoff-remove"
+                              aria-label={"Remover sessão agendada " + (index + 1)}
+                              onClick={() => changePlannedAppointments(rows => rows.filter((_, i) => i !== index))}>Remover</button>
+                          </div>
                         </div>)}
                       <button type="button" className="btn soft oneoff-add"
                         onClick={() => changePlannedAppointments(rows => [...rows, {
@@ -1578,6 +1580,11 @@ export default function Home() {
                             <option value={consultationTime}>{consultationTime} (fora da agenda)</option>}
                           {consultationHours.map(hour => <option key={hour} value={hourLabel(hour)}>{hourLabel(hour)}</option>)}
                         </select>
+                      </label>
+                      <label className="schedule-repeat-toggle">
+                        <input type="checkbox" checked={nonRepeating(form)}
+                          onChange={e => setNonRepeatingSchedule(e.target.checked)} />
+                        <span>Horário não repete</span>
                       </label>
                     </div>}
                   </div>

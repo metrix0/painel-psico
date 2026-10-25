@@ -702,3 +702,24 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
  .oneoff-schedule-row{grid-template-columns:minmax(0,1fr) minmax(0,.85fr);gap:8px}
  .oneoff-remove{grid-column:1/-1;justify-self:end;min-height:32px}
 }
+
+/* Keep the one-off toggle beside the session day and time controls. */
+.consultation-schedule{grid-column:1/-1}
+.consultation-schedule .consultation-datetime{
+  grid-template-columns:minmax(0,1.3fr) minmax(0,.7fr) max-content;
+}
+.consultation-schedule .consultation-datetime>.schedule-repeat-toggle{
+  min-height:40px;align-self:end;
+}
+.oneoff-schedule-row{grid-template-columns:minmax(0,1.3fr) minmax(0,.7fr) max-content}
+.oneoff-schedule-actions{display:flex;gap:12px;align-items:center;justify-content:flex-end;min-height:40px}
+.oneoff-schedule-actions .schedule-repeat-toggle{white-space:nowrap}
+@media(max-width:680px){
+  .consultation-schedule .consultation-datetime,.oneoff-schedule-row{
+    grid-template-columns:minmax(0,1fr) minmax(0,.75fr);
+  }
+  .consultation-schedule .consultation-datetime>.schedule-repeat-toggle,
+  .oneoff-schedule-actions{grid-column:1/-1;justify-self:start;min-height:30px}
+  .oneoff-schedule-actions{width:100%;justify-content:space-between}
+  .oneoff-remove{grid-column:auto}
+}
