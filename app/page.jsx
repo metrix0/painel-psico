@@ -605,6 +605,15 @@ export default function Home() {
       setNotice("Não foi possível salvar as alterações pendentes antes de abrir a agenda.");
       return;
     }
+    // The selected patient's draft is independent of the cached sidebar list.
+    // Refresh it so saved appointment changes appear immediately in Agenda.
+    const { data: updatedPatients, error } = await supabase.from("psico_patients")
+      .select("*").order("created_at", { ascending: false });
+    if (error) {
+      setNotice("Não foi possível atualizar os horários da agenda: " + error.message);
+      return;
+    }
+    setPatients(updatedPatients || []);
     setTab("agenda");
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
