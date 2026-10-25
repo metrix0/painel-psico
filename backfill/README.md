@@ -3,13 +3,13 @@
 Data do backfill: 21/10/2026 (BRT). Definitions are stored in the dedicated Supabase Painel Psico database, scoped by user through existing RLS. **No patient records, questionnaire responses, or report text were imported or modified.**
 
 ## Source material
-- Uploaded TEA anamnesis (18-page Word file) and SCARED Parents (41 questions).
+- Uploaded TEA anamnesis (18-page Word file), Regina's Padrão anamnesis (16-page Word file), and SCARED Parents (41 questions).
 - Photographed CARS, M-CHAT-R, SNAP-IV Familiar, EFA, Vineland-3 parent/teacher protocols and the instrument control list.
 - Existing laudo result tables from the Drive folder supplied by the user; including the locally supplied DOCX and representative Google Docs.
 - Photos and restricted test questions are not committed to the public repository.
 
 ## Seeded definitions (per account)
-- Anamnese: exactly two active models, **Padrão** (empty) and **TEA** (183 questions; sections preserved). A previous test template is archived, not deleted.
+- Anamnese: exactly two active models, **Padrão** (209 questions, grouped by the 12 sections of Regina's 16-page Word document; revision 2) and **TEA** (183 questions; sections preserved). Original Padrão revision 1 and previous patient answers remain intact; a previous test template is archived, not deleted.
 - Instruments: **38 active models**; **27** have result tables (**38** tables total). Fixed row labels and editable result cells reflect verified report table structures, not individual patients' scores.
 - Externally answerable questionnaires: **SCARED (41)**, **SNAP-IV Familiar (18)**, **M-CHAT-R (20)**, **EFA (50)** — **129** question definitions.
 - Sessões: three configurable fields: checklist of applied/pending/corrected/in-report status; worked-on instruments; next instruments/pending tasks.
@@ -30,3 +30,5 @@ This file records status and provenance only; the sensitive question bodies live
 - Verified result-table formats from additional Drive laudos: TAVIS-4 (reaction time, correct responses and omission/action errors), TISD (subtests and total) and TDE II (additional efficiency table).
 
 - Additional layout sources: Raven-CPM result grid, three respondent-specific SSRS layouts (including behavior and academic subscales), and ETDAH-AD factor table from Drive laudos. These contain blank editable results only, never patient scores.
+
+- 25/10/2026: Padrão model backfilled in both authenticated accounts; version 2 created automatically by database triggers, previous revisions preserved. Settings now display one collapsed card per anamnesis template, and the Agenda settings section precedes Configurar Laudo.
