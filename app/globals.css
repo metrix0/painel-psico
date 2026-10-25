@@ -676,3 +676,6 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 .archived-patient-link>span:nth-child(2){flex:1;min-width:0;overflow-wrap:anywhere}
 .archived-patient-date{font-size:11px;color:var(--muted)}
 @media(max-width:520px){.instrument-patient-entry>.session-details{padding:12px}.archived-patient-link{gap:8px}}
+
+.patient-hero-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+@media(max-width:640px){.hero:has(.patient-hero-actions){align-items:flex-start;flex-wrap:wrap;gap:12px}.patient-hero-actions{width:100%;justify-content:space-between}}

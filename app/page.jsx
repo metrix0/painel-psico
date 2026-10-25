@@ -617,7 +617,7 @@ export default function Home() {
         setSelectedId(id);
       }
       setSearch("");
-      setTab((count ?? (id === selectedId ? sessions.length : 0)) > 1 ? "sessoes" : "anamnese");
+      setTab(latestPatient.archived_at ? "anamnese" : ((count ?? (id === selectedId ? sessions.length : 0)) > 1 ? "sessoes" : "anamnese"));
       setMenuOpen(false);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
@@ -1436,7 +1436,12 @@ export default function Home() {
                   accept="image/jpeg,image/png,image/webp"
                   aria-label="Selecionar foto do paciente" onChange={uploadPatientPhoto} />
               </div>
-              <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
+              <div className="patient-hero-actions">
+                {form.archived_at
+                  ? <button className="btn soft" disabled={busy} onClick={() => void restorePatient()}>Restaurar paciente</button>
+                  : <button className="btn soft" disabled={busy} onClick={() => void archivePatient()}>Arquivar paciente</button>}
+                <span className={"save-state save-" + autosave.status} aria-live="polite">{saveLabel}</span>
+              </div>
             </div>
 
             <div className="summary">
@@ -1557,10 +1562,7 @@ export default function Home() {
                     </p>
                   )}
                   <div className="card-actions">
-                    {form.archived_at
-                       ? <button className="btn soft" disabled={busy} onClick={() => void restorePatient()}>Restaurar paciente</button>
-                       : <button className="btn soft" disabled={busy} onClick={() => void archivePatient()}>Arquivar paciente</button>}
-                     <button className="btn danger" disabled={busy} onClick={deletePatient}>Excluir paciente</button>
+                    <button className="btn danger" disabled={busy} onClick={deletePatient}>Excluir paciente</button>
                   </div>
                 </div>
               </section>
