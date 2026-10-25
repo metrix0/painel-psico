@@ -1552,6 +1552,8 @@ export default function Home() {
                               <span>Horário não repete</span>
                             </label>}
                             <button type="button" className="btn oneoff-remove"
+                              disabled={(anamnese.sessoes_agendadas || []).length <= 1}
+                              title={(anamnese.sessoes_agendadas || []).length <= 1 ? "Mantenha ao menos uma sessão para configurar o horário" : undefined}
                               aria-label={"Remover sessão agendada " + (index + 1)}
                               onClick={() => changePlannedAppointments(rows => rows.filter((_, i) => i !== index))}>Remover</button>
                           </div>
