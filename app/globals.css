@@ -640,13 +640,20 @@ input,textarea,select{transition:border-color .2s ease,box-shadow .2s ease,backg
 @media(max-width:600px){.user-access-form{flex-direction:column;align-items:stretch}
 .user-access-form>.field{min-width:0;width:100%}}
 
-/* Three recently visited patients never have an inner scrolling area. */
-.side-menu{scrollbar-width:none;-ms-overflow-style:none}
-.side-menu::-webkit-scrollbar{display:none}
-.side-section{flex-shrink:0;min-width:0}
-.patient-links{max-height:none;overflow:visible;flex-shrink:0;min-width:0}
-.patient-links.is-searching{max-height:min(230px,42vh);overflow-y:auto;overflow-x:hidden;scrollbar-width:none;-ms-overflow-style:none}
-.patient-links.is-searching::-webkit-scrollbar{display:none}
+/* Fix the sidebar in place; scroll only the small patient selection list. */
+.side-menu{overflow:hidden;min-height:0}
+.side-section{flex:0 1 auto;min-height:0;min-width:0}
+.side-section>.side-label,.side-section>.patient-search,.side-section>.side-add{flex-shrink:0}
+.patient-links{
+  min-height:0;min-width:0;max-height:124px;
+  overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior-y:contain;
+  scrollbar-width:none;-ms-overflow-style:none;
+  -webkit-overflow-scrolling:touch;
+}
+.patient-links::-webkit-scrollbar{display:none}
+.patient-links.is-searching{max-height:min(230px,42vh)}
+.side-nav,.sidebar-footer,.brand,.agenda-side-link{flex-shrink:0}
 /* The editor uses the same collapsible summary and details as Sessões. */
 .instrument-template-entry{padding:0;display:block;overflow:hidden}
 .instrument-template-entry .session-details{display:flex;flex-direction:column;gap:12px}
