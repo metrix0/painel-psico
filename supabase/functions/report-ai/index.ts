@@ -1,6 +1,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { REPORT_MODEL, REPORT_VERSION, DEFAULT_REPORT_SETTINGS, makeSnapshot, sourceHash, documentSchema, REVIEW_SCHEMA, generationPrompt, reviewPrompt, validateReport, extractResponse } from '../_shared/reportCore.mjs';
 
+const MAX_SNAPSHOT_BYTES=120000; // reject oversize reports rather than silently clipping clinical data
+const MAX_REPORT_AGE_MS=45*60*1000; // stale jobs may not start more paid stages
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, x-client-info, content-type','Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store'};
 const reply=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}});
 const validId=(id:unknown)=>typeof id==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id);
@@ -15,11 +17,12 @@ async function api(key:string,path:string,body?:unknown,method?:string){
 }
 async function start(key:string,snapshot:any,stage:string,feedback:string[]=[],candidate?:unknown){
   const prompt=stage==='generating'?generationPrompt(snapshot,feedback):reviewPrompt(snapshot,candidate);
-  return api(key,'responses',{model:REPORT_MODEL,background:true,store:true,reasoning:{effort:'high'},max_output_tokens:stage==='generating'?32768:8192,
+  return api(key,'responses',{model:REPORT_MODEL,background:true,store:true,reasoning:{effort:'medium'},max_output_tokens:stage==='generating'?12000:3500,
     instructions:prompt.instructions,input:prompt.input,text:{format:{type:'json_schema',name:stage==='generating'?'neuropsychological_report':'report_fidelity_review',strict:true,schema:stage==='generating'?documentSchema(snapshot):REVIEW_SCHEMA}}});
 }
 function addUsage(current:any,response:any){const usage=response.usage||{};return {input_tokens:(current.input_tokens||0)+(usage.input_tokens||0),output_tokens:(current.output_tokens||0)+(usage.output_tokens||0),responses:(current.responses||0)+1};}
 async function erase(key:string,id:string){try{await api(key,'responses/'+encodeURIComponent(id),undefined,'DELETE');}catch{/* The saved clinical record does not depend on provider cleanup. */}}
+async function cancel(key:string,id:string){try{await api(key,'responses/'+encodeURIComponent(id)+'/cancel',undefined,'POST');}catch{/* Already completed or cancelled. */}}
 Deno.serve(async(req:Request)=>{
   if(req.method==='OPTIONS')return new Response(null,{headers:cors});
   if(req.method!=='POST')return reply({error:'Método não permitido.'},405);
@@ -49,7 +52,7 @@ Deno.serve(async(req:Request)=>{
       const snapshot=makeSnapshot(raw);
       if(!snapshot.settings.professional_name.trim()||!snapshot.settings.crp.trim())throw new SafeError('Preencha o nome da profissional e o CRP em Configurar Laudos.');
       if(!snapshot.sessions.length&&!snapshot.instruments.length&&!Object.values(snapshot.patient.anamnese||{}).some(v=>typeof v==='string'?v.trim():v&&Object.keys(v).length))throw new SafeError('Registre os dados clínicos antes de gerar o laudo.');
-      if(new TextEncoder().encode(JSON.stringify(snapshot)).byteLength>1500000)throw new SafeError('Os dados excedem o tamanho permitido para uma geração completa. Nenhum conteúdo foi cortado.',413);
+      if(new TextEncoder().encode(JSON.stringify(snapshot)).byteLength>MAX_SNAPSHOT_BYTES)throw new SafeError('Os dados excedem o limite de segurança de 120 KB para geração. Nenhum dado foi cortado nem enviado.',413);
       key=await result(admin.rpc('psico_report_server_key'));
       if(!key)throw new SafeError('A chave da OpenAI ainda não está configurada no servidor.',503);
       const created=await admin.from('psico_reports').insert({owner_id:user.id,patient_id:body.patient_id,request_id:body.request_id,status:'generating',model:REPORT_MODEL,source_hash:hash,source_snapshot:snapshot,validation:{version:REPORT_VERSION,attempt:1}}).select('*').single();
@@ -57,7 +60,10 @@ Deno.serve(async(req:Request)=>{
         const winner=await result(admin.from('psico_reports').select('*').eq('owner_id',user.id).eq('patient_id',body.patient_id).in('status',['generating','reviewing']).maybeSingle());
         if(winner)return reply({report:publicReport(winner)});
       }
-      if(created.error)throw new SafeError('Não foi possível iniciar a versão do laudo.',500);
+      if(created.error){
+        if(created.error.code==='P0001')throw new SafeError(created.error.message,429);
+        throw new SafeError('Não foi possível iniciar a versão do laudo.',500);
+      }
       report=created.data;state={stage:'starting',attempt:1,usage:{}};
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state}));
       const response=await start(key!,snapshot,'generating');
@@ -78,6 +84,10 @@ Deno.serve(async(req:Request)=>{
     }
     key=await result(admin.rpc('psico_report_server_key'));
     if(!key)throw new SafeError('Credencial da OpenAI indisponível.',503);
+    if(Date.now()-Date.parse(report.created_at)>MAX_REPORT_AGE_MS){
+      await cancel(key!,state.response_id);
+      throw new SafeError('O limite de 45 minutos foi atingido. A geração foi encerrada sem reinício automático.',502);
+    }
     const response=await api(key!,'responses/'+encodeURIComponent(state.response_id));
     if(['queued','in_progress'].includes(response.status)){
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state}));
@@ -100,16 +110,12 @@ Deno.serve(async(req:Request)=>{
     }
     if(errors.length){
       await erase(key!,state.response_id);
-      if(state.attempt>=2){
-        const failed=await result(admin.from('psico_reports').update({status:'failed',error_message:'Esta versão não passou nas verificações. Os laudos anteriores foram preservados.',validation:{version:REPORT_VERSION,errors,review,attempt:state.attempt},usage,completed_at:new Date().toISOString()}).eq('id',report.id).select('*').single());
-        await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:{stage:'failed'}}));
-        return reply({report:publicReport(failed)});
-      }
-      const next=await start(key!,snapshot,'generating',errors);
-      state={stage:'generating',response_id:next.id,attempt:state.attempt+1,usage};
-      report=await result(admin.from('psico_reports').update({status:'generating',validation:{version:REPORT_VERSION,errors,attempt:state.attempt},usage}).eq('id',report.id).select('*').single());
-      await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state}));
-      return reply({report:publicReport(report)});
+      const failed=await result(admin.from('psico_reports').update({
+        status:'failed',error_message:'Esta geração não passou na verificação. Nenhuma nova chamada será feita automaticamente.',
+        validation:{version:REPORT_VERSION,errors,review,attempt:1},usage,completed_at:new Date().toISOString()
+      }).eq('id',report.id).select('*').single());
+      await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:{stage:'failed'}}));
+      return reply({report:publicReport(failed)});
     }
     if(state.stage==='generating'){
       const next=await start(key!,snapshot,'reviewing',[],output);
