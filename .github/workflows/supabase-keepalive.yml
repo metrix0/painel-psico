@@ -1,0 +1,64 @@
+name: Painel Psico Supabase keep-alive
+
+on:
+  schedule:
+    # Four genuine database RPC requests per day, at off-peak minutes (UTC).
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: painel-psico-supabase-keepalive
+  cancel-in-progress: false
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Execute safe read-only database RPC
+        env:
+          SUPABASE_URL: https://dmrwptoddklmorshyvai.supabase.co
+          # This is a public/publishable key, NOT a service_role or secret key.
+          SUPABASE_PUBLISHABLE_KEY: "sb_publishable_GuKrleVWXhjQZZIkhXppYA_FDO-wDPs"
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          status="$(curl --silent --show-error --fail-with-body \
+            --retry 3 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 10 --max-time 25 \
+            --output "$body" --write-out '%{http_code}' \
+            --request POST \
+            --header "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "$SUPABASE_URL/rest/v1/rpc/painel_psico_keepalive")"
+          if [[ "$status" != "200" || "$(tr -d '\r\n[:space:]' < "$body")" != "1" ]]; then
+            echo "::error::Supabase keep-alive RPC failed (HTTP $status)."
+            cat "$body"
+            exit 1
+          fi
+          echo "Supabase database keep-alive succeeded."
+
+      # GitHub disables cron workflows in public repos after 60 days with no
+      # repo activity. Make a bot-only empty commit if idle for >35 days.
+      - name: Checkout for idle-repository maintenance
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Prevent scheduled workflow auto-disable
+        if: success()
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then exit 0; fi
+          last_commit="$(git log -1 --format=%ct)"
+          now="$(date -u +%s)"
+          if (( now - last_commit > 35 * 86400 )); then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "chore: keep scheduled Supabase ping active"
+            git push origin HEAD:main
+          fi
