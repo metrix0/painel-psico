@@ -27,6 +27,19 @@ import { HALF_HOUR_TIMES, nonRepeating, plannedAppointments } from "../lib/appoi
 import { DEFAULT_REPORT_SETTINGS } from "../supabase/functions/_shared/reportCore.mjs";
 import { deliveryDate, instrumentForm, waitingInSession } from "../lib/instrumentDelivery.mjs";
 
+const VIEW_TABS = new Set(["agenda", "configuracoes", "anamnese", "sessoes", "instrumentos", "laudo"]);
+const lastViewKey = userId => "painel-psico:last-view:" + userId;
+function readLastView(userId) {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(lastViewKey(userId)));
+    if (!saved || typeof saved !== "object") return null;
+    return {
+      patientId: typeof saved.patientId === "string" ? saved.patientId : null,
+      tab: VIEW_TABS.has(saved.tab) ? saved.tab : "anamnese"
+    };
+  } catch { return null; }
+}
+
 const EMPTY_ANAMNESE = {
   motivo: "",
   desenvolvimento: "",
@@ -241,6 +254,7 @@ export default function Home() {
   const [agendaLoading, setAgendaLoading] = useState(false);
   const [agendaError, setAgendaError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
+  const [navigationReadyFor, setNavigationReadyFor] = useState(null);
   const [form, setForm] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [anamneseTemplates, setAnamneseTemplates] = useState([]);
@@ -379,23 +393,37 @@ export default function Home() {
     if (!user || !supabase) {
       setPatients([]);
       setSelectedId(null);
+      setNavigationReadyFor(null);
       setForm(null);
       return;
     }
     let cancelled = false;
+    setNavigationReadyFor(null);
     async function load() {
       const { data, error } = await supabase.from("psico_patients").select("*").order("created_at", { ascending: false });
       if (cancelled) return;
       if (error) { setNotice(error.message); return; }
       const rows = data || [];
+      const lastView = readLastView(user.id);
       setPatients(rows);
       const recent = [...rows].sort((a, b) =>
         Date.parse(b.last_visited_at || b.created_at) - Date.parse(a.last_visited_at || a.created_at));
-      setSelectedId(prev => rows.some(p => p.id === prev && !p.archived_at) ? prev : (recent.find(p => !p.archived_at)?.id || null));
+      setSelectedId(prev => rows.some(p => p.id === prev) ? prev :
+        rows.some(p => p.id === lastView?.patientId) ? lastView.patientId :
+        (recent.find(p => !p.archived_at)?.id || null));
+      if (lastView) setTab(lastView.tab);
+      setNavigationReadyFor(user.id);
     }
     load();
     return () => { cancelled = true; };
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || navigationReadyFor !== user.id) return;
+    try {
+      window.localStorage.setItem(lastViewKey(user.id), JSON.stringify({ patientId: selectedId, tab }));
+    } catch { /* Navigation works normally when browser storage is unavailable. */ }
+  }, [user?.id, navigationReadyFor, selectedId, tab]);
 
   useEffect(() => {
     if (!user?.id || !supabase) {
