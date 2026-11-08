@@ -77,7 +77,7 @@ export default function ReportPanel({patientId,beforeGenerate,conclusion,onConcl
     }catch(e){setError(e.message||'Não foi possível gerar o Word.');}finally{setDownloading(false);}
   }
   return <div className="ai-report">
-    <div className="card report-tools"><div className="cardhead"><div><h2>Laudo com inteligência artificial</h2><p className="muted">GPT-6.1 Sol · modelo de seis seções</p></div><button className="btn primary" disabled={starting||!!job||loading} onClick={generate}>{starting?'Iniciando…':job?'Geração em andamento…':'Gerar Laudo'}</button></div>
+    <div className="card report-tools"><div className="cardhead"><div><h2>Laudo com inteligência artificial</h2><p className="muted">{report?.validation?.manual_draft?"Rascunho manual · seis seções · revisão pendente":"GPT-6.1 Sol · modelo de seis seções"}</p></div><button className="btn primary" disabled={starting||!!job||loading} onClick={generate}>{starting?'Iniciando…':job?'Geração em andamento…':'Gerar Laudo'}</button></div>
       <div className="cardbody">
         <p className="muted">A geração utiliza todos os dados clínicos salvos: anamnese, sessões, instrumentos, tabelas e respostas dos formulários. Cada versão passa por verificações de estrutura, sessões, valores e uma segunda revisão de fidelidade pelo modelo.</p>
         <p className="muted">Controle de gastos: máximo de 2 gerações por conta em 24 h, 3 no projeto em 24 h e 10 por mês no projeto. Não há tentativas pagas automáticas após falhas. Limites financeiros em dólares devem ser configurados no projeto da OpenAI.</p>
