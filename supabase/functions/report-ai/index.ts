@@ -16,7 +16,11 @@ async function api(key:string,path:string,body?:unknown,method?:string){
 }
 async function start(key:string,snapshot:any,stage:string,feedback:string[]=[],candidate?:unknown){
   const prompt=stage==='generating'?generationPrompt(snapshot,feedback):reviewPrompt(snapshot,candidate);
-  return api(key,'responses',{model:REPORT_MODEL,background:true,store:true,reasoning:{effort:'medium'},max_output_tokens:stage==='generating'?12000:3500,
+  const items=snapshot.sessions.length+snapshot.instruments.length;
+  const outputLimit=stage==='generating'
+    ? Math.min(26000,Math.max(12000,6000+700*items))
+    : Math.min(8000,Math.max(3500,2500+100*items));
+  return api(key,'responses',{model:REPORT_MODEL,background:true,store:true,reasoning:{effort:'medium'},max_output_tokens:outputLimit,
     instructions:prompt.instructions,input:prompt.input,text:{format:{type:'json_schema',name:stage==='generating'?'neuropsychological_report':'report_fidelity_review',strict:true,schema:stage==='generating'?documentSchema(snapshot):REVIEW_SCHEMA}}});
 }
 function addUsage(current:any,response:any){const usage=response.usage||{};return {input_tokens:(current.input_tokens||0)+(usage.input_tokens||0),output_tokens:(current.output_tokens||0)+(usage.output_tokens||0),responses:(current.responses||0)+1};}
@@ -91,7 +95,25 @@ Deno.serve(async(req:Request)=>{
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state}));
       return reply({report:publicReport(report)});
     }
-    if(response.status!=='completed')throw new SafeError('O modelo não concluiu esta versão ('+response.status+'). Gere novamente.',502);
+    if(response.status!=='completed'){
+      // Persist the provider's incomplete reason and token usage for diagnosis.
+      // Never retry or start another paid request automatically.
+      const reason=response.incomplete_details?.reason||response.error?.code||response.status;
+      const usage=addUsage(state.usage||{},response);
+      const message=reason==='max_output_tokens'
+        ? 'O modelo atingiu seu limite de tokens de saída antes de concluir o laudo.'
+        : 'O provedor interrompeu a geração ('+reason+').';
+      const failed=await result(admin.from('psico_reports').update({
+        status:'failed',
+        error_message:message+' Nenhuma nova tentativa foi iniciada automaticamente.',
+        usage,
+        validation:{version:REPORT_VERSION,attempt:state.attempt||1,stage:state.stage,provider_status:response.status,provider_reason:reason},
+        completed_at:new Date().toISOString()
+      }).eq('id',report.id).select('*').single());
+      await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:{stage:'failed'}}));
+      await erase(key!,state.response_id);
+      return reply({report:publicReport(failed)});
+    }
     const output=extractResponse(response),usage=addUsage(state.usage||{},response),snapshot=report.source_snapshot;
     let errors:string[]=[],review:any=null;
     if(state.stage==='generating')errors=validateReport(output,snapshot);
