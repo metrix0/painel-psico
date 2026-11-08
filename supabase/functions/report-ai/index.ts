@@ -10,14 +10,20 @@ const result=async(query:any)=>{const {data,error}=await query;if(error)throw ne
 const publicReport=(report:any)=>({id:report.id,patient_id:report.patient_id,status:report.status,model:report.model,validation:report.validation,usage:report.usage,error_message:report.error_message,created_at:report.created_at,completed_at:report.completed_at});
 async function api(key:string,path:string,body?:unknown,method?:string){
   let r:Response; try { r=await fetch('https://api.openai.com/v1/'+path,{method:method||(body?'POST':'GET'),headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(30000)}); } catch { throw new SafeError('A comunicação com a OpenAI foi interrompida. A consulta será retomada.',502,true); }
-  const data=await r.json();
+  const raw=await r.text();
+  let data:any;
+  try { data=JSON.parse(raw); } catch { data={raw_response:raw}; }
   if(!r.ok)throw new SafeError('Falha na OpenAI ('+r.status+', '+(data.error?.code||'request_failed')+').',502,r.status===429||r.status>=500,{http_status:r.status,request_id:r.headers.get('x-request-id'),provider_response:data});
+  if(data && typeof data==='object' && r.headers.get('x-request-id'))data._provider_request_id=r.headers.get('x-request-id');
   return data;
 }
-async function start(key:string,snapshot:any,stage:string,feedback:string[]=[],candidate?:unknown){
+async function start(key:string,snapshot:any,stage:string,feedback:string[]=[],candidate?:unknown,audit?:(request:unknown)=>Promise<void>){
   const prompt=stage==='generating'?generationPrompt(snapshot,feedback):reviewPrompt(snapshot,candidate);
-  return api(key,'responses',{model:REPORT_MODEL,background:true,store:true,reasoning:{effort:'medium'},
-    instructions:prompt.instructions,input:prompt.input,text:{format:{type:'json_schema',name:stage==='generating'?'neuropsychological_report':'report_fidelity_review',strict:true,schema:stage==='generating'?documentSchema(snapshot):REVIEW_SCHEMA}}});
+  const request={model:REPORT_MODEL,background:true,store:true,reasoning:{effort:'medium'},
+    instructions:prompt.instructions,input:prompt.input,text:{format:{type:'json_schema',name:stage==='generating'?'neuropsychological_report':'report_fidelity_review',strict:true,schema:stage==='generating'?documentSchema(snapshot):REVIEW_SCHEMA}}};
+  // Request includes clinical input but never credentials. Audit before any paid call.
+  if(audit)await audit(request);
+  return api(key,'responses',request);
 }
 async function logEvent(admin:any,reportId:string,stage:string,eventType:string,payload:unknown){
   // Logs contain patient data and provider output. They are private and service-role-only.
@@ -74,7 +80,8 @@ Deno.serve(async(req:Request)=>{
         model:REPORT_MODEL,snapshot_bytes:new TextEncoder().encode(JSON.stringify(snapshot)).byteLength,
         source_hash:hash,stage:'generating',at:new Date().toISOString()
       });
-      const response=await start(key!,snapshot,'generating');
+      const response=await start(key!,snapshot,'generating',[],undefined,
+        reqBody=>logEvent(admin,report.id,'generating','provider_request',reqBody));
       state={...state,stage:'generating',response_id:response.id};
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state}));
       await logEvent(admin,report.id,'generating','provider_created',response);
@@ -149,7 +156,8 @@ Deno.serve(async(req:Request)=>{
       return reply({report:publicReport(failed)});
     }
     if(state.stage==='generating'){
-      const next=await start(key!,snapshot,'reviewing',[],output);
+      const next=await start(key!,snapshot,'reviewing',[],output,
+        reqBody=>logEvent(admin,report.id,'reviewing','provider_request',reqBody));
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:{stage:'reviewing',response_id:next.id,attempt:state.attempt,usage,candidate:output}}));
       await logEvent(admin,report.id,'reviewing','provider_created',next);
       report=await result(admin.from('psico_reports').update({status:'reviewing',usage,validation:{version:REPORT_VERSION,attempt:state.attempt,deterministic_passed:true}}).eq('id',report.id).select('*').single());
