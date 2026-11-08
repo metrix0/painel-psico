@@ -5,23 +5,25 @@ const MAX_REPORT_AGE_MS=45*60*1000; // stale jobs may not start more paid stages
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, x-client-info, content-type','Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store'};
 const reply=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}});
 const validId=(id:unknown)=>typeof id==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id);
-class SafeError extends Error { constructor(message:string,public status=400,public retryable=false){super(message);} }
+class SafeError extends Error { constructor(message:string,public status=400,public retryable=false,public diagnostic:unknown=null){super(message);} }
 const result=async(query:any)=>{const {data,error}=await query;if(error)throw new SafeError('Não foi possível acessar os registros do laudo.',500,true);return data;};
 const publicReport=(report:any)=>({id:report.id,patient_id:report.patient_id,status:report.status,model:report.model,validation:report.validation,usage:report.usage,error_message:report.error_message,created_at:report.created_at,completed_at:report.completed_at});
 async function api(key:string,path:string,body?:unknown,method?:string){
   let r:Response; try { r=await fetch('https://api.openai.com/v1/'+path,{method:method||(body?'POST':'GET'),headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(30000)}); } catch { throw new SafeError('A comunicação com a OpenAI foi interrompida. A consulta será retomada.',502,true); }
   const data=await r.json();
-  if(!r.ok)throw new SafeError('Falha na OpenAI ('+r.status+', '+(data.error?.code||'request_failed')+').',502,r.status===429||r.status>=500);
+  if(!r.ok)throw new SafeError('Falha na OpenAI ('+r.status+', '+(data.error?.code||'request_failed')+').',502,r.status===429||r.status>=500,{http_status:r.status,request_id:r.headers.get('x-request-id'),provider_response:data});
   return data;
 }
 async function start(key:string,snapshot:any,stage:string,feedback:string[]=[],candidate?:unknown){
   const prompt=stage==='generating'?generationPrompt(snapshot,feedback):reviewPrompt(snapshot,candidate);
-  const items=snapshot.sessions.length+snapshot.instruments.length;
-  const outputLimit=stage==='generating'
-    ? Math.min(26000,Math.max(12000,6000+700*items))
-    : Math.min(8000,Math.max(3500,2500+100*items));
-  return api(key,'responses',{model:REPORT_MODEL,background:true,store:true,reasoning:{effort:'medium'},max_output_tokens:outputLimit,
+  return api(key,'responses',{model:REPORT_MODEL,background:true,store:true,reasoning:{effort:'medium'},
     instructions:prompt.instructions,input:prompt.input,text:{format:{type:'json_schema',name:stage==='generating'?'neuropsychological_report':'report_fidelity_review',strict:true,schema:stage==='generating'?documentSchema(snapshot):REVIEW_SCHEMA}}});
+}
+async function logEvent(admin:any,reportId:string,stage:string,eventType:string,payload:unknown){
+  // Logs contain patient data and provider output. They are private and service-role-only.
+  await result(admin.rpc('psico_report_log_event',{
+    p_report_id:reportId,p_stage:stage,p_event_type:eventType,p_payload:payload
+  }));
 }
 function addUsage(current:any,response:any){const usage=response.usage||{};return {input_tokens:(current.input_tokens||0)+(usage.input_tokens||0),output_tokens:(current.output_tokens||0)+(usage.output_tokens||0),responses:(current.responses||0)+1};}
 async function erase(key:string,id:string){try{await api(key,'responses/'+encodeURIComponent(id),undefined,'DELETE');}catch{/* The saved clinical record does not depend on provider cleanup. */}}
@@ -68,9 +70,14 @@ Deno.serve(async(req:Request)=>{
       }
       report=created.data;state={stage:'starting',attempt:1,usage:{}};
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state}));
+      await logEvent(admin,report.id,'generating','request_created',{
+        model:REPORT_MODEL,snapshot_bytes:new TextEncoder().encode(JSON.stringify(snapshot)).byteLength,
+        source_hash:hash,stage:'generating',at:new Date().toISOString()
+      });
       const response=await start(key!,snapshot,'generating');
       state={...state,stage:'generating',response_id:response.id};
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state}));
+      await logEvent(admin,report.id,'generating','provider_created',response);
       return reply({report:publicReport(report)},202);
     }
     if(!validId(body.report_id))throw new SafeError('Laudo inválido.');
@@ -95,6 +102,9 @@ Deno.serve(async(req:Request)=>{
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state}));
       return reply({report:publicReport(report)});
     }
+    // Save the complete provider response, including partial output, usage and failure reasons,
+    // BEFORE validation or deletion of the remote provider response.
+    await logEvent(admin,report.id,state.stage,'provider_terminal',response);
     if(response.status!=='completed'){
       // Persist the provider's incomplete reason and token usage for diagnosis.
       // Never retry or start another paid request automatically.
@@ -129,6 +139,7 @@ Deno.serve(async(req:Request)=>{
       }
     }
     if(errors.length){
+      await logEvent(admin,report.id,state.stage,'validation_failed',{errors,review,usage});
       await erase(key!,state.response_id);
       const failed=await result(admin.from('psico_reports').update({
         status:'failed',error_message:'Esta geração não passou na verificação. Nenhuma nova chamada será feita automaticamente.',
@@ -140,19 +151,36 @@ Deno.serve(async(req:Request)=>{
     if(state.stage==='generating'){
       const next=await start(key!,snapshot,'reviewing',[],output);
       await result(admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:{stage:'reviewing',response_id:next.id,attempt:state.attempt,usage,candidate:output}}));
+      await logEvent(admin,report.id,'reviewing','provider_created',next);
       report=await result(admin.from('psico_reports').update({status:'reviewing',usage,validation:{version:REPORT_VERSION,attempt:state.attempt,deterministic_passed:true}}).eq('id',report.id).select('*').single());
       await erase(key!,state.response_id);
       return reply({report:publicReport(report)});
     }
     const ready=await result(admin.from('psico_reports').update({status:'ready',document:state.candidate,usage,validation:{version:REPORT_VERSION,attempt:state.attempt,deterministic_passed:true,review,session_count:snapshot.sessions.length,instrument_count:snapshot.instruments.length,source_count:snapshot.sources.length},completed_at:new Date().toISOString()}).eq('id',report.id).select('*').single());
+    await logEvent(admin,report.id,state.stage,'completed',{usage,validation:ready.validation});
     report=ready;
     await erase(key!,state.response_id);
     await admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:{stage:'ready'}});
     return reply({report:publicReport(ready)});
   }catch(error){
     if(report?.status==='ready')return reply({report:publicReport(report)});
-    const safe=error instanceof SafeError?error:new SafeError('Não foi possível concluir a operação. Tente novamente.',502);
+    const safe=error instanceof SafeError?error:new SafeError('Não foi possível concluir a operação. Tente novamente.',502,false,{
+      error_name:error instanceof Error?error.name:'UnknownError',
+      error_message:error instanceof Error?error.message:String(error)
+    });
     if(report&&admin&&state){
+      try {
+        await logEvent(admin,report.id,state.stage||'unknown','error',{
+          message:safe.message,status:safe.status,retryable:safe.retryable,
+          diagnostic:safe.diagnostic,at:new Date().toISOString(),response_id:state.response_id||null
+        });
+      } catch (logError) {
+        // Preserve diagnostic details on the report too, even if private audit logging failed.
+        await admin.from('psico_reports').update({validation:{
+          version:REPORT_VERSION,logging_failed:true,
+          error_diagnostic:safe.diagnostic||null,stage:state.stage||'unknown'
+        }}).eq('id',report.id);
+      }
       // Transient poll failures preserve the resumable provider job.
       if(state.response_id&&safe.retryable&&Date.now()-Date.parse(report.created_at)<86400000&&report.status!=='failed'){
         await admin.rpc('psico_report_job_put',{p_report_id:report.id,p_state:state});
