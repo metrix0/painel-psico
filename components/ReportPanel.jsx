@@ -16,7 +16,7 @@ export default function ReportPanel({patientId,beforeGenerate,conclusion,onConcl
   const [error,setError]=useState(''),[warning,setWarning]=useState(''),[stale,setStale]=useState(false);
   const mounted=useRef(true),requestId=useRef(null);
   const refresh=useCallback(async(preferred)=>{
-    const {data,error}=await supabase.from('psico_reports').select('id,status,created_at,completed_at,error_message,validation,model').eq('patient_id',patientId).order('created_at',{ascending:false}).limit(50);
+    const {data,error}=await supabase.from('psico_reports').select('id,status,source_hash,created_at,completed_at,error_message,validation,model').eq('patient_id',patientId).order('created_at',{ascending:false}).limit(50);
     if(error)throw new Error('Não foi possível carregar os laudos.');
     if(!mounted.current)return;
     setVersions(data||[]);setJob((data||[]).find(active)||null);
@@ -79,18 +79,14 @@ export default function ReportPanel({patientId,beforeGenerate,conclusion,onConcl
   return <div className="ai-report">
     <div className="card report-tools"><div className="cardhead"><div><h2>Laudo com inteligência artificial</h2><p className="muted">{report?.validation?.manual_draft?"Rascunho manual · seis seções · revisão pendente":"GPT-6.1 Sol · modelo de seis seções"}</p></div><button className="btn primary" disabled={starting||!!job||loading} onClick={generate}>{starting?'Iniciando…':job?'Geração em andamento…':'Gerar Laudo'}</button></div>
       <div className="cardbody">
-        <p className="muted">A geração utiliza todos os dados clínicos salvos: anamnese, sessões, instrumentos, tabelas e respostas dos formulários. Cada versão passa por verificações de estrutura, sessões, valores e uma segunda revisão de fidelidade pelo modelo.</p>
-        <p className="muted">Controle de gastos: máximo de 2 gerações por conta em 24 h, 3 no projeto em 24 h e 10 por mês no projeto. Não há tentativas pagas automáticas após falhas. Limites financeiros em dólares devem ser configurados no projeto da OpenAI.</p>
         <p className="report-review-note">Rascunho para revisão da psicóloga responsável. Confira a análise e a conclusão antes de emitir o documento.</p>
         {error&&<p role="alert" className="report-error">{error}</p>}{warning&&<p role="status" className="report-warning">{warning}</p>}
         {job&&<div className="report-progress" role="status"><span className="report-spinner"/><div><b>{job.status==='reviewing'?'Revisando a fidelidade clínica…':'Redigindo e conferindo o laudo…'}</b><p>Isso pode levar alguns minutos. Você pode mudar de seção; o acompanhamento será retomado ao abrir o laudo.</p>{job.validation?.attempt>1&&<p>A primeira redação exigiu correções. Uma nova conferência está em andamento.</p>}</div></div>}
         {!!versions.length&&<label className="field"><span>Versões do laudo</span><select aria-label="Versões do laudo" value={selectedId} onChange={e=>setSelectedId(e.target.value)}><option value="">Selecione uma versão</option>{versions.filter(r=>r.status==='ready').map(r=><option key={r.id} value={r.id}>{r.validation?.manual_draft?"Rascunho manual — revisão pendente · ":""}{stamp(r.completed_at||r.created_at)}</option>)}</select></label>}
-        {versions.filter(v=>v.status==='failed').slice(0,1).map(v=><details className="report-validation" key={v.id}><summary>Geração não concluída — {stamp(v.created_at)}</summary><p>{v.error_message}</p>{v.validation?.errors?.map((text,i)=><p key={i}>{text}</p>)}</details>)}
+        {versions.filter(v=>v.status==='failed'&&!versions.some(r=>r.status==='ready'&&r.source_hash===v.source_hash)).slice(0,1).map(v=><details className="report-validation" key={v.id}><summary>Geração não concluída — {stamp(v.created_at)}</summary><p>{v.error_message}</p>{v.validation?.errors?.map((text,i)=><p key={i}>{text}</p>)}</details>)}
         {report&&<>
-          <p className="muted">Versão de {stamp(report.completed_at)} · {report.validation.session_count} sessões e {report.validation.instrument_count} instrumentos registrados.</p>
-          {report.validation?.manual_draft&&<p className="report-warning" role="status"><strong>Rascunho manual — não assinado.</strong> Preparado a partir dos registros existentes, sem nova chamada à OpenAI. A psicóloga responsável deve conferir dados, interpretação, conclusão e encaminhamentos antes de emitir o laudo.</p>}
+          {report.validation?.manual_draft&&<p className="report-warning" role="status"><strong>Documento preliminar.</strong> Revisão e assinatura da psicóloga responsável pendentes.</p>}
           {stale&&<p className="report-warning" role="status">Os registros ou o modelo foram alterados após esta geração. Gere uma nova versão para incluir as alterações.</p>}
-          {!!report.validation.review?.issues?.length&&<details className="report-validation"><summary>Pontos de atenção da revisão</summary>{report.validation.review.issues.map((x,i)=><p key={i}>{x.message}</p>)}</details>}
           <div className="actions"><button className="btn primary" disabled={downloading} onClick={download}>{downloading?'Preparando Word…':'Baixar DOCX'}</button><button className="btn" onClick={()=>window.print()}>Imprimir / PDF</button></div>
         </>}
       </div>
