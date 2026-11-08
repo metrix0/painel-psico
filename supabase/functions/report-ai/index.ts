@@ -1,7 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { REPORT_MODEL, REPORT_VERSION, DEFAULT_REPORT_SETTINGS, makeSnapshot, sourceHash, documentSchema, REVIEW_SCHEMA, generationPrompt, reviewPrompt, validateReport, extractResponse } from '../_shared/reportCore.mjs';
 
-const MAX_SNAPSHOT_BYTES=120000; // reject oversize reports rather than silently clipping clinical data
 const MAX_REPORT_AGE_MS=45*60*1000; // stale jobs may not start more paid stages
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, x-client-info, content-type','Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store'};
 const reply=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}});
@@ -52,7 +51,6 @@ Deno.serve(async(req:Request)=>{
       const snapshot=makeSnapshot(raw);
       if(!snapshot.settings.professional_name.trim()||!snapshot.settings.crp.trim())throw new SafeError('Preencha o nome da profissional e o CRP em Configurar Laudos.');
       if(!snapshot.sessions.length&&!snapshot.instruments.length&&!Object.values(snapshot.patient.anamnese||{}).some(v=>typeof v==='string'?v.trim():v&&Object.keys(v).length))throw new SafeError('Registre os dados clínicos antes de gerar o laudo.');
-      if(new TextEncoder().encode(JSON.stringify(snapshot)).byteLength>MAX_SNAPSHOT_BYTES)throw new SafeError('Os dados excedem o limite de segurança de 120 KB para geração. Nenhum dado foi cortado nem enviado.',413);
       key=await result(admin.rpc('psico_report_server_key'));
       if(!key)throw new SafeError('A chave da OpenAI ainda não está configurada no servidor.',503);
       const created=await admin.from('psico_reports').insert({owner_id:user.id,patient_id:body.patient_id,request_id:body.request_id,status:'generating',model:REPORT_MODEL,source_hash:hash,source_snapshot:snapshot,validation:{version:REPORT_VERSION,attempt:1}}).select('*').single();
