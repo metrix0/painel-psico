@@ -94,7 +94,12 @@ export function validateReport(doc,snapshot) {
   for(const ref of doc.data_coverage||[])if(!refs.has(ref))errors.push('Fonte desconhecida: '+ref);
   if(!doc.analysis.overview.length||!doc.analysis.integration.length)errors.push('Visão geral ou integração da análise ausente.');
   const paragraphs=allParagraphs(doc);
-  for(const p of paragraphs){if(typeof p.text!=='string'||!p.text.trim())errors.push('Parágrafo vazio.');if(!Array.isArray(p.source_refs)||!p.source_refs.length||p.source_refs.some(r=>!refs.has(r)))errors.push('Parágrafo sem fonte válida.');}
+  const editorialPhrasing=/dura[cç][aã]o n[aã]o informada|o registro indica|a tabela registra|esta entrada est[aá]|esta entrada foi|nesta minuta|neste rascunho|o documento original|n[aã]o h[aá] observa[cç][oõ]es comportamentais diretas pormenorizadas|n[aã]o foi (considerad[oa]|interpretad[oa]) como aplica[cç][aã]o|os dados excedem o limite|foi tratado como relato de terceiro/i;
+  for(const p of paragraphs){
+    if(typeof p.text!=='string'||!p.text.trim())errors.push('Parágrafo vazio.');
+    if(!Array.isArray(p.source_refs)||!p.source_refs.length||p.source_refs.some(r=>!refs.has(r)))errors.push('Parágrafo sem fonte válida.');
+    if(typeof p.text==='string'&&editorialPhrasing.test(p.text))errors.push('Redação editorial ou artificial inadequada para laudo clínico.');
+  }
   const claims=doc.numeric_claims||[];
   for(const c of claims){if(!c.literal||!c.quote||!refs.get(c.source_ref)?.includes(c.quote)||!c.quote.includes(c.literal))errors.push('Evidência numérica inválida: '+c.literal);}
   for(const p of paragraphs)for(const literal of new Set(numbers(p.text)))if(!claims.some(c=>c.literal===literal&&p.source_refs.includes(c.source_ref)))errors.push('Número sem evidência: '+literal);
