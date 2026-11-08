@@ -20,6 +20,13 @@ create or replace function psico_private.enforce_report_quota()
 returns trigger language plpgsql security definer set search_path='' as $guard$
 declare caps psico_private.report_guard%rowtype;
 begin
+  -- A manually prepared unsigned draft is not an OpenAI API generation.
+  -- Authenticated clients cannot insert into psico_reports; this is server-side only.
+  if new.status='ready' and new.model='manual'
+     and new.validation->>'manual_draft'='true'
+     and new.validation->>'professional_review_pending'='true' then
+    return new;
+  end if;
   if new.status <> 'generating' then
     raise exception 'A geração precisa começar no estado generating.' using errcode='P0001';
   end if;
@@ -42,15 +49,15 @@ begin
     raise exception 'O limite de laudos simultâneos foi atingido.' using errcode='P0001';
   end if;
   if (select count(*) from public.psico_reports r
-      where r.owner_id=new.owner_id and r.created_at>now()-interval '24 hours') >= caps.owner_day_limit then
+      where r.model <> 'manual' and r.owner_id=new.owner_id and r.created_at>now()-interval '24 hours') >= caps.owner_day_limit then
     raise exception 'Limite de 2 novas gerações em 24 horas por conta.' using errcode='P0001';
   end if;
   if (select count(*) from public.psico_reports r
-      where r.created_at>now()-interval '24 hours') >= caps.project_day_limit then
+      where r.model <> 'manual' and r.created_at>now()-interval '24 hours') >= caps.project_day_limit then
     raise exception 'Limite global de 3 novas gerações em 24 horas.' using errcode='P0001';
   end if;
   if (select count(*) from public.psico_reports r
-      where r.created_at>=date_trunc('month',now() at time zone 'UTC') at time zone 'UTC') >= caps.project_month_limit then
+      where r.model <> 'manual' and r.created_at>=date_trunc('month',now() at time zone 'UTC') at time zone 'UTC') >= caps.project_month_limit then
     raise exception 'Limite global de 10 novas gerações neste mês.' using errcode='P0001';
   end if;
   return new;
