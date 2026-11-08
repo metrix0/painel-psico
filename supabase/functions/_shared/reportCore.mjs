@@ -82,7 +82,14 @@ export function validateReport(doc,snapshot) {
   coverage(snapshot.sessions,doc.analysis.sessions,'session_id','Sessões');
   coverage(snapshot.instruments,doc.analysis.instruments,'instrument_id','Instrumentos');
   for(const s of doc.analysis.sessions){const source=snapshot.sessions.find(x=>x.id===s.session_id);if(source&&(s.occurred_on!==source.occurred_on||s.duration_minutes!==source.duration_minutes))errors.push('Data ou duração divergente: '+s.session_id);if(!s.paragraphs?.length)errors.push('Sessão sem análise: '+s.session_id);}
-  for(const i of doc.analysis.instruments){const source=snapshot.instruments.find(x=>x.id===i.instrument_id);if(source&&i.name!==source.name)errors.push('Nome de instrumento divergente: '+i.instrument_id);if(!i.paragraphs?.length)errors.push('Instrumento sem análise: '+i.instrument_id);}
+  for(const i of doc.analysis.instruments){
+    const source=snapshot.instruments.find(x=>x.id===i.instrument_id);
+    if(source&&i.name!==source.name)errors.push('Nome de instrumento divergente: '+i.instrument_id);
+    // Preserve technical coverage of unscored/pending entries without inventing clinical prose.
+    const hasScores=(source?.scores||[]).some(score=>score.value!==null&&score.value!==undefined&&String(score.value).trim()!=='');
+    const hasTableResults=(source?.tables||[]).some(table=>(table.cells||[]).some(cell=>cell.editable&&String(cell.text||'').trim()));
+    if(!i.paragraphs?.length&&(hasScores||hasTableResults))errors.push('Instrumento com resultado sem análise: '+i.instrument_id);
+  }
   for(const ref of refs.keys())if(!doc.data_coverage?.includes(ref))errors.push('Fonte não contemplada: '+ref);
   for(const ref of doc.data_coverage||[])if(!refs.has(ref))errors.push('Fonte desconhecida: '+ref);
   if(!doc.analysis.overview.length||!doc.analysis.integration.length)errors.push('Visão geral ou integração da análise ausente.');
@@ -116,7 +123,7 @@ const REPORT_WRITING_STYLE = `PADRÃO OBRIGATÓRIO DE REDAÇÃO PROFISSIONAL, de
 - NÃO escreva: "o registro indica", "consta no cadastro", "esta entrada está pendente", "os dados disponíveis descrevem", "a tabela registra", "não foi interpretada como nova aplicação", "a fonte apresenta", "o material foi tratado como", "o documento original", "nesta minuta", "neste rascunho", "o modelo", "a IA", "a psicóloga deverá revisar" ou similares. Não narre etapas de trabalho, seleção de evidências, identificação de duplicatas, checagens, auditoria, ausência de preenchimento ou instruções ao leitor. Isso pertence apenas aos campos técnicos internos.
 - Não repita "não permite diagnóstico isolado" em cada instrumento; mencione somente a cautela clínica relevante à interpretação, em contexto.
 - Não utilize marcadores de ausência técnica como "duração não informada", "sem nota disponível", "não há observações pormenorizadas" ou "sem dados clínicos". Se a duração ou um detalhe não constar, simplesmente omita. Se uma sessão somente registra anamnese, descreva a entrevista e sua finalidade em uma frase natural.
-- Se um instrumento estiver pendente ou vazio, NÃO faça parágrafo editorial sobre ele. Preserve o registro obrigatório de cobertura na estrutura da resposta, mas deixe sua análise sucinta ou vazia quando clinicamente apropriado. Nunca invente pontuação.
+- Se um instrumento estiver pendente, repetido sem resultados ou vazio, use paragraphs: [] no respectivo objeto de análise: preserve o item para a conferência técnica, mas NÃO gere nenhuma narrativa sobre o cadastro, duplicidade ou campos ausentes. Nunca invente pontuação.
 - Evite texto genérico, prolixo, defensivo ou artificial; priorize a informação concreta sobre o paciente. Não formule diagnóstico definitivo sem sustentação suficiente.
 - Os laudos de referência definem somente convenções de escrita e organização. NÃO importe sintomas, resultados, histórias, medicamentos ou diagnósticos de outros pacientes.
 `;
