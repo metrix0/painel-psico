@@ -6,8 +6,8 @@ on:
     paths:
       - '.github/workflows/supabase-keepalive.yml'
   schedule:
-    # Four genuine database RPC requests per day, at off-peak minutes (UTC).
-    - cron: "23 */6 * * *"
+    # Frequent real database-heartbeat writes; Actions may skip/delay scheduled runs.
+    - cron: "37 */2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -44,7 +44,7 @@ jobs:
             cat "$body"
             exit 1
           fi
-          echo "Supabase database keep-alive succeeded."
+          echo "Supabase heartbeat RPC succeeded (dedicated private database row)."
 
       # GitHub disables cron workflows in public repos after 60 days with no
       # repo activity. Make a bot-only empty commit if idle for >35 days.
